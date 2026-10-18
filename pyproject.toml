@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanoid-motion"
+version = "0.1.0"
+description = "Human motion capture to physically tracked motion on the Unitree G1: GMR retargeting with audits, multi-motion PPO tracking in Isaac Lab, evaluation and replay"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Gaoxiang Zhao" }]
+requires-python = ">=3.10,<3.11"
+# Exact environments are pinned in requirements/ (installed by scripts/setup_cpu.sh and scripts/setup_isaac.sh).
+dependencies = ["numpy", "scipy"]
+
+[project.urls]
+Repository = "https://github.com/seerier/Humanoid-Motion"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

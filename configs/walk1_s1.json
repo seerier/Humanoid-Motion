@@ -1,0 +1,14 @@
+{
+  "source_file": "data/walk1_subject1.bvh",
+  "frame_start": 300,
+  "frame_end_exclusive": 480,
+  "robot": "unitree_g1",
+  "solver": "daqp",
+  "damping": 0.5,
+  "human_height_m": 1.75,
+  "use_velocity_limit": false,
+  "offset_to_ground": false,
+  "stance_height_above_p05_m": 0.04,
+  "stance_speed_m_s": 0.2,
+  "output_dir": "outputs/walk1_s1_f300_480"
+}

@@ -1,0 +1,19 @@
+# Environments and caches
+.venv*/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+
+# Upstream checkouts, datasets and generated outputs (fetched or produced locally)
+third_party/
+data/
+outputs/
+logs/
+wandb/
+
+# Policy weights are published as release assets, not committed
+*.pt
+
+# Local worktrees (e.g. .worktrees/dev)
+.worktrees/
