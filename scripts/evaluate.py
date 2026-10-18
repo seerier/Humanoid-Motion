@@ -79,7 +79,7 @@ def evaluate(args):
     cfg.scene.env_spacing = max(5., 2*extent+4.)
     cfg.seed = agent.seed = 0
     cfg.sim.device = agent.device = args.device
-    cfg.scene.robot.spawn.asset_path = str(ROOT/'third_party/whole_body_tracking/source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf')
+    cfg.scene.robot.spawn.asset_path = str((ROOT/'third_party/whole_body_tracking/source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf').resolve())
     usd_dir = args.output.resolve()/'usd'  # relative USD dirs break the asset's relative payload paths
     if args.usd_template and args.usd_template.joinpath('.asset_hash').exists():
         # Same URDF/config hash: skips URDF->USD conversion, which can stall on network file systems.

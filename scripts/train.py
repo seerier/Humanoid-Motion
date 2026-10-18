@@ -101,7 +101,7 @@ def train(args, resources):
     cfg.commands.motion.debug_vis = False
     apply_v2(cfg, training=True, heading=args.heading)
     observation = OBSERVATION_NAMES[args.heading]
-    cfg.scene.robot.spawn.asset_path = str(ROOT / 'third_party/whole_body_tracking/source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf')
+    cfg.scene.robot.spawn.asset_path = str((ROOT / 'third_party/whole_body_tracking/source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf').resolve())
     if sha256(Path(cfg.scene.robot.spawn.asset_path)) != URDF_SHA256:
         raise ValueError('Asset mismatch')
     # Fresh per process: a conversion interrupted after writing .asset_hash must never be reused. Seeding it with
