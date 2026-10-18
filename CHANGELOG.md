@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.1
+
+Fixes for the CPU environment on Linux; models and results are unchanged.
+
+- `scripts/setup_cpu.sh` installs the CPU-only PyTorch wheel on Linux. Before, it installed the CUDA build without its NVIDIA libraries, so importing GMR failed.
+- The G1 description download verifies TLS with certifi's CA bundle, so it also works on RHEL-family hosts such as Rocky Linux.
+
 ## v0.1
 
 First release: LAFAN1 to Unitree G1, GMR retargeting backend and BeyondMimic tracking backend.
