@@ -60,7 +60,7 @@ def test_requeue_reuses_run_id(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'wandb', module)
     monkeypatch.setenv('HUMANOID_MOTION_WANDB', 'online')
     (tmp_path/wandb_run.RECORD).write_text(json.dumps(dict(id='kept01', mode='online')))
-    wandb_run.start(tmp_path, 'overnight_multimotion', {})
+    wandb_run.start(tmp_path, 'train', {})
     assert calls[0]['id'] == 'kept01' and calls[0]['resume'] == 'allow'
     assert record(tmp_path)['url'] == 'https://wandb.example/run'
 
@@ -70,7 +70,7 @@ def test_offline_requeue_gets_fresh_id_and_keeps_earlier(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'wandb', module)
     monkeypatch.setenv('HUMANOID_MOTION_WANDB', 'online')
     (tmp_path/wandb_run.RECORD).write_text(json.dumps(dict(id='seg01', mode='offline', earlier_ids=['seg00'])))
-    wandb_run.start(tmp_path, 'overnight_multimotion', {})
+    wandb_run.start(tmp_path, 'train', {})
     assert [c['id'] for c in calls] == ['fresh01', 'fresh01']
     assert record(tmp_path)['earlier_ids'] == ['seg00', 'seg01']
 

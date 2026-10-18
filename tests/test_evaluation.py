@@ -42,7 +42,7 @@ def test_completion_denominator_keeps_failures_assistance_and_wrong_phase():
 def test_transfer_rejects_semantic_mismatch_despite_equal_array_sizes():
     import copy
     import pytest
-    manifest = dict(audit_passed=True, schema='motion_lab.isaac_tracking.v1',
+    manifest = dict(audit_passed=True, schema='humanoid_motion.isaac_tracking.v1',
         tracking_commit='pinned', urdf_sha256='robot', joint_names=['left', 'right'],
         body_names=['pelvis', 'torso_link'], root_body='pelvis', anchor_body='torso_link',
         fps=50, coordinates=dict(quaternion='wxyz'), control=dict(action_offset='default_joint_pos'),
