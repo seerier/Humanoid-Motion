@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import hashlib
 import io
+import ssl
 import tarfile
 import urllib.request
 
@@ -14,12 +15,22 @@ SHA = 'b514bc9ddd1039c29a0e6feea9f57f1503f6657d07d97a4ef8a7b11fbebe6674'
 MEMBER = 'unitree_description/urdf/g1/main.urdf'
 
 
+def download(url: str) -> bytes:
+    """Verify TLS against certifi's bundle; uv's standalone Python misses system CAs on RHEL-family hosts."""
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        context = ssl.create_default_context()
+    return urllib.request.urlopen(url, timeout=120, context=context).read()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime', action='store_true', help='Also stage G1-only URDF/meshes in tracker assets')
     args = parser.parse_args()
     archive = DEST / 'unitree_description.tar.gz'
-    raw = archive.read_bytes() if archive.exists() else urllib.request.urlopen(URL, timeout=120).read()
+    raw = archive.read_bytes() if archive.exists() else download(URL)
     if hashlib.sha256(raw).hexdigest() != SHA:
         raise ValueError('Robot archive checksum changed; inspect before adopting it')
     DEST.mkdir(parents=True, exist_ok=True)
