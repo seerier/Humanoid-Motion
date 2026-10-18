@@ -36,7 +36,9 @@ scipy==1.15.3
 setuptools==84.0.0
 sympy==1.14.0
 tomli==2.4.1
-torch==2.14.0
+torch==2.14.0 ; sys_platform == 'darwin'
+torch @ https://download.pytorch.org/whl/cpu/torch-2.14.0%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl#sha256=019463a7566401db8b1ed142026086db8fa680abda49ec41a60a8718d88e891d ; sys_platform == 'linux' and platform_machine == 'x86_64'
+torch @ https://download.pytorch.org/whl/cpu/torch-2.14.0%2Bcpu-cp310-cp310-manylinux_2_28_aarch64.whl#sha256=7beed32d29ad533bb32fb5122f34050c54286d0a3933024edf7e36c489ce3c82 ; sys_platform == 'linux' and platform_machine == 'aarch64'
 tqdm==4.70.1
 trimesh==5.1.0
 typing-extensions==4.16.0
