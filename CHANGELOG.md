@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2
+
+Demo media and video rendering; the policy and its results are unchanged.
+
+- README teaser: one policy on six held-out test clips in a 3 × 2 grid. Pipeline figure: human motion capture, retargeted G1 reference and physics-based tracking side by side. Both are animated WebP at 50 fps.
+- `scripts/render_video.py`: the G1 in its own materials on a checker floor, a key light with shadows that follows the robot, per-panel labels and white gutters; writes an animated WebP or GIF next to the MP4. Defaults are now three 400 × 300 panels per row. The reference ghost is opt-in (`--ghost`) and meant for analysis.
+- Cinematic camera by default: a 3/4 front view that turns with the body's smoothed heading, a 28° lens framed on the body's size from near eye level, lead room in the direction of travel and a ±8° swing over the clip, at 50 fps (the rate the rollouts are recorded at). `--camera fixed`, `--follow spring`, `--orbit` and `--blur` (motion blur) are options.
+
 ## v0.1.1
 
 Fixes for the CPU environment on Linux; models and results are unchanged.

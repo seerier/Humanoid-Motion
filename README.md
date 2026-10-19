@@ -2,9 +2,9 @@
 
 An end-to-end pipeline that turns human motion capture into physically tracked motion on the Unitree G1 humanoid: retarget LAFAN1 recordings to the robot with GMR, audit every clip, train one multi-motion tracking policy with PPO in Isaac Lab, then evaluate it and replay the recorded physics.
 
-![One policy tracking four held-out test clips. Blue: the simulated robot. Grey: the reference it follows. Red: the attempt crossed a failure threshold (the jump).](docs/media/tracking_demo.gif)
+![One policy tracking six held-out LAFAN1 test clips on the Unitree G1: dance, run, fight and sports, fight, ground moves, fall and get up.](docs/media/teaser.webp)
 
-*One policy on four held-out test clips (sprint, fight, ground moves, jump). Blue is the simulated G1, the grey ghost is the reference it tracks, and red marks the attempt that crossed a failure threshold. Rendered from recorded Isaac Lab states; nothing is re-simulated for the video.*
+*One policy on six held-out test clips, each tracked to the end. Rendered from recorded Isaac Lab states; nothing is re-simulated for the video.*
 
 ## Results (v0.1)
 
@@ -37,7 +37,7 @@ On the 190 completed clips, the mean aligned body position error is **4.9 cm** (
 
 ## Pipeline
 
-![The same dance clip at the three stages: human source joints, the G1 kinematic reference after retargeting, and the policy's recorded physical execution.](docs/media/pipeline_dance.gif)
+![The same dance clip at the three stages: human source joints, the G1 kinematic reference after retargeting, and the policy's recorded physical execution.](docs/media/pipeline.webp)
 
 *Left to right: LAFAN1 source joints, the G1 kinematic reference after retargeting, and the policy's execution in physics.*
 
@@ -117,7 +117,7 @@ Summarize, replay and render an evaluation (CPU; copy `outputs/lafan1/runtime` a
 ```bash
 .venv/bin/python scripts/summarize_results.py ours=outputs/eval/test
 .venv/bin/python scripts/view_tracking.py --library outputs/lafan1/runtime/test.json --evaluation ours=outputs/eval/test
-.venv/bin/python scripts/render_video.py grid --library outputs/lafan1/runtime/test.json --evaluation outputs/eval/test --clips jumps1_subject1_f2820_3000 sprint1_subject2_f3180_3360
+.venv/bin/python scripts/render_video.py grid --library outputs/lafan1/runtime/test.json --evaluation outputs/eval/test --clips dance2_subject2_f3720_3900 run1_subject5_f1560_1740 --webp outputs/videos/demo.webp
 ```
 
 The replay viewer runs at http://127.0.0.1:8081. Repeat `--evaluation LABEL=DIR` to compare several policies clip by clip.

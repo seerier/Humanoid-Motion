@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "humanoid-motion"
-version = "0.1.1"
+version = "0.2.0"
 description = "Human motion capture to physically tracked motion on the Unitree G1: GMR retargeting with audits, multi-motion PPO tracking in Isaac Lab, evaluation and replay"
 readme = "README.md"
 license = { text = "MIT" }
