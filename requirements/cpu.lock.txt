@@ -34,6 +34,7 @@ requests==2.34.2
 rich==14.3.4
 scipy==1.15.3
 setuptools==84.0.0
+smplx==0.1.28
 sympy==1.14.0
 tomli==2.4.1
 torch==2.14.0 ; sys_platform == 'darwin'

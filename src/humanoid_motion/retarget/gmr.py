@@ -1,5 +1,7 @@
 """GMR retargeting backend: run unmodified GMR IK headlessly, keep every selected frame and audit FK.
 
+Sources (humanoid_motion.retarget.sources): LAFAN1 BVH (default) or an AMASS-style SMPL-X npz (config
+source_kind 'smplx', e.g. from humanoid_motion.video.gvhmr_adapter).
 Optional config key floor_limit (absent = unmodified GMR): an IK ground constraint, see add_floor_limit.
 """
 import hashlib
@@ -7,7 +9,6 @@ import importlib.metadata
 import json
 import pickle
 import platform
-import re
 import subprocess
 import sys
 import time
@@ -21,9 +22,8 @@ import numpy as np
 from mink.exceptions import NoSolutionFound
 from general_motion_retargeting import GeneralMotionRetargeting
 from general_motion_retargeting.params import IK_CONFIG_DICT
-from general_motion_retargeting.utils.lafan1 import load_bvh_file
-from general_motion_retargeting.utils.lafan_vendor.extract import read_bvh
-from humanoid_motion.geometry import named_csv, source_fk, xml_forward_kinematics
+from humanoid_motion.geometry import named_csv, xml_forward_kinematics
+from humanoid_motion.retarget.sources import load_source
 
 
 def sha256(path: Path) -> str:
@@ -74,6 +74,23 @@ def geom_lowest_point(model, data, g: int) -> np.ndarray:
         vertices = model.mesh_vert[model.mesh_vertadr[mesh]:model.mesh_vertadr[mesh] + model.mesh_vertnum[mesh]]
         return centre + rot @ vertices[int(np.argmin(vertices @ rot[2]))]
     raise ValueError(f'Unsupported foot collision geom type {kind}')
+
+
+def sole_body(model, ik_body: str) -> str:
+    """The body carrying this foot's collision geoms: the IK target body, or its nearest such ancestor.
+
+    GMR's smplx tables aim the foot task at G1's left_toe_link / right_toe_link, marker bodies with no geoms,
+    while its bvh_lafan1 tables aim at left_ankle_roll_link / right_ankle_roll_link, which hold the four sole
+    spheres. Climbing to the nearest ancestor with collision geoms gives the same sole bodies for both, so
+    foot-penetration numbers stay comparable across sources instead of silently auditing an empty body.
+    """
+    body = model.body(ik_body).id
+    while body > 0:
+        if any(model.geom_bodyid[g] == body and (model.geom_contype[g] or model.geom_conaffinity[g])
+               for g in range(model.ngeom)):
+            return model.body(body).name
+        body = int(model.body_parentid[body])
+    raise ValueError(f'No collision geom on {ik_body} or any ancestor; cannot audit foot contact')
 
 
 class FloorLimit(mink.Limit):
@@ -191,7 +208,11 @@ def summary(values: np.ndarray) -> dict:
 
 
 def retarget(cfg: dict, output: Path | None = None) -> dict:
-    """Retarget one BVH window described by cfg; writes reference.npz, motion.pkl, motion.csv, metadata.json, diagnostics.json."""
+    """Retarget one source window described by cfg (LAFAN1 BVH, or SMPL-X with source_kind 'smplx').
+
+    Writes reference.npz, motion.pkl, motion.csv, metadata.json, diagnostics.json. LAFAN1 outputs are unchanged by
+    the SMPL-X support: the source kind and axis audit are recorded only for other sources.
+    """
     if cfg['robot'] != 'unitree_g1':
         raise ValueError('This release supports the Unitree G1 only')
     source = ROOT / cfg['source_file']
@@ -199,18 +220,13 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(f'Refusing to overwrite run: {out}; choose --output')
     out.mkdir(parents=True, exist_ok=True)
-    text = source.read_text()
-    frame_time = float(re.search(r'Frame Time:\s*([\d.eE+-]+)', text).group(1))
-    fps = 1.0 / frame_time
-    frames, upstream_height = load_bvh_file(str(source), format='lafan1')
-    anim = read_bvh(str(source))
+    # Source frames, units, axes and frame time: humanoid_motion.retarget.sources (one place per source kind).
+    src = load_source(cfg, ROOT)
+    frame_time, fps, frames, names = src.frame_time, src.fps, src.frames, src.names
     start, stop = cfg['frame_start'], cfg['frame_end_exclusive']
-    assert 0 <= start < stop <= len(frames) and stop - start >= 3
-    frames = frames[start:stop]
-    names = list(anim.bones)
-    source_positions = np.array([[f[n][0] for n in names] for f in frames])
-    source_quaternions = np.array([[f[n][1] for n in names] for f in frames])
-    r = GeneralMotionRetargeting('bvh_lafan1', cfg['robot'], actual_human_height=cfg['human_height_m'], solver=cfg['solver'], damping=cfg['damping'], use_velocity_limit=cfg['use_velocity_limit'], verbose=False)
+    source_positions, source_quaternions = src.positions, src.quaternions
+    lafan1 = src.kind == 'bvh_lafan1'
+    r = GeneralMotionRetargeting(src.gmr_source, cfg['robot'], actual_human_height=src.human_height_m, solver=cfg['solver'], damping=cfg['damping'], use_velocity_limit=cfg['use_velocity_limit'], verbose=False)
     model = r.model
     joint_ids = [i for i in range(model.njnt) if model.jnt_type[i] == mj.mjtJoint.mjJNT_HINGE]
     joint_names = [model.joint(i).name for i in joint_ids]
@@ -220,7 +236,7 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     body_names = [model.body(i).name for i in range(model.nbody)]
     # Robot body for each human role, read from the GMR IK table, so other humanoids need no hand-written names.
     role = {entry[0]: body for body, entry in r.ik_match_table2.items()}
-    feet = [role['LeftFootMod'], role['RightFootMod']]
+    feet = [sole_body(model, role[name]) for name in src.ik_foot_roles]
     target_names = list(r.human_scale_table)
     qposes, targets, positions, rotations, foot_bottoms, ik_errors, rotation_errors = [], [], [], [], [], [], []
     # Optional: let the first (cold-start) frame iterate to convergence; GMR's own cap applies afterwards.
@@ -262,12 +278,12 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     r.max_iter = default_max_iter
     qpos, targets, positions, rotations, foot_bottoms, ik_errors = map(np.array, (qposes, targets, positions, rotations, foot_bottoms, ik_errors))
     assert np.isfinite(qpos).all()
-    foot_indices = [names.index(n) for n in ('LeftFoot', 'RightFoot')]
+    foot_indices = [names.index(n) for n in src.stance_joints]
     source_feet = source_positions[:, foot_indices]
     source_speed = np.linalg.norm(np.gradient(source_feet, frame_time, axis=0), axis=-1)
     stance_floor = np.percentile(source_feet[:, :, 2], 5, axis=0)
     stance = (source_feet[:, :, 2] <= stance_floor + cfg['stance_height_above_p05_m']) & (source_speed < cfg['stance_speed_m_s'])
-    np.savez_compressed(out / 'reference.npz', qpos=qpos, source_positions=source_positions, source_quaternions=source_quaternions, source_names=np.array(names), source_parents=anim.parents, target_positions=targets, target_names=np.array(target_names), body_positions=positions, body_quaternions=rotations, body_names=np.array(body_names), timestamps=np.arange(len(qpos))*frame_time, stance_mask=stance, foot_collision_bottom_z=foot_bottoms, ik_error=ik_errors)
+    np.savez_compressed(out / 'reference.npz', qpos=qpos, source_positions=source_positions, source_quaternions=source_quaternions, source_names=np.array(names), source_parents=src.parents, target_positions=targets, target_names=np.array(target_names), body_positions=positions, body_quaternions=rotations, body_names=np.array(body_names), timestamps=np.arange(len(qpos))*frame_time, stance_mask=stance, foot_collision_bottom_z=foot_bottoms, ik_error=ik_errors)
     with (out / 'motion.pkl').open('wb') as f:
         pickle.dump({'fps': fps, 'root_pos': qpos[:, :3], 'root_rot': qpos[:, [4, 5, 6, 3]], 'dof_pos': qpos[:, 7:], 'local_body_pos': None, 'link_body_list': None}, f)
     # Explicit named contract from pinned csv_to_npz.py, independently of model size.
@@ -287,9 +303,6 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     for i, q in enumerate(qpos):
         fk = xml_forward_kinematics(xml, q, joint_names)
         independent_error.extend(np.linalg.norm(fk[n][0]-positions[i,j]) for j,n in enumerate(body_names) if n in fk)
-    independent_source = source_fk(anim.pos[start:stop], anim.quats[start:stop], anim.parents)
-    axis_matrix = np.array([[1,0,0],[0,0,-1],[0,1,0]])
-    independent_source = independent_source @ axis_matrix.T / 100
     residuals = {body: summary(np.linalg.norm(positions[:,body_names.index(body)]-targets[:,target_names.index(entry[0])],axis=1)) for body,entry in r.ik_match_table2.items()}
     robot_feet = positions[:, [body_names.index(foot) for foot in feet]]
     robot_speed_xy = np.linalg.norm(np.gradient(robot_feet[:,:,:2], frame_time, axis=0), axis=-1)
@@ -299,7 +312,8 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
       'evidence_level': 'kinematic_reference_only_no_physics',
       'frames_requested': stop-start, 'frames_saved': len(qpos), 'finite': bool(np.isfinite(qpos).all()),
       'quaternion_norm_max_error': float(np.max(np.abs(np.linalg.norm(qpos[:,3:7],axis=1)-1))),
-      'source_fk_independent_max_error_m': float(np.max(np.abs(independent_source-source_positions))),
+      'source_fk_independent_max_error_m': src.independent_source_max_error_m,
+      **({} if lafan1 else {'source_axis_audit': src.audit}),
       'robot_fk_independent_position_error_m': summary(np.array(independent_error)),
       'csv_named_roundtrip_max_error': float(np.max(np.abs(roundtrip-qpos))),
       'joint_limit_violations_gt_1e-6_rad': int((violation>1e-6).sum()), 'joint_limit_max_excess_rad': float(violation.max()),
@@ -319,7 +333,7 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
       'startup': ('cold IK state at first selected frame'
                   + (f'; first frame allowed {first_frame_max_iter} iterations' if first_frame_max_iter else '')
                   + '; no hidden warmup, smoothing or removed frames'),
-      'derivatives': 'numpy.gradient at BVH frame_time, central interior / one-sided endpoints; diagnostics only, tracker must resample and recompute'
+      'derivatives': src.conventions['derivatives']
     }
     if floor_info:
         gap = foot_bottoms.min(axis=(1, 2)) - floor_info['floor_height_m']   # lowest foot geom above the IK floor, per frame
@@ -328,8 +342,8 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
                                       'frames_below_floor_gt_1mm': int((gap < -1e-3).sum()),
                                       'frames_within_5mm_of_floor': int((gap < 5e-3).sum())}
     commits ={name: upstream_commit(name) for name in ('GMR','lafan1','whole_body_tracking')}
-    meta = {'config':cfg,'upstream_commits':commits,'source':{'path':cfg['source_file'],'sha256':sha256(source),'frame_start':start,'frame_end_exclusive':stop,'total_frames':len(anim.pos),'fps':fps,'frame_time_s':frame_time,'positions':'BVH cm Y-up → metres Z-up via (x,-z,y); world positions, no trajectory recentering','quaternions':'wxyz','height_assumption_m':cfg['human_height_m'],'loader_hardcoded_height_m':upstream_height},'model':{'xml_path':str(xml.relative_to(ROOT)),'sha256':sha256(xml),'nq':model.nq,'nv':model.nv,'nu':model.nu,'root':f'{model.body(1).name} free joint, xyz metres + wxyz','joint_names':joint_names,'joint_units':'radians','hands':'fixed rubber hands; no finger actuators' if cfg['robot'] == 'unitree_g1' else 'as in the GMR model','feet':feet,'ik_config_path':str(r.xml_file).replace('assets/unitree_g1/g1_mocap_29dof.xml','general_motion_retargeting/ik_configs/bvh_lafan1_to_g1.json'),'ik_timestep_s':model.opt.timestep},'csv':{'columns':['root_x','root_y','root_z','qx','qy','qz','qw']+expected,'fps':fps,'resampled':False,'target':'pinned BeyondMimic CSV input, not its final training NPZ'},'outputs':{name:sha256(out/name) for name in ('reference.npz','motion.pkl','motion.csv')}}
-    ik_path = Path(IK_CONFIG_DICT['bvh_lafan1'][cfg['robot']])
+    meta = {'config':cfg,'upstream_commits':commits,'source':{**({} if lafan1 else {'kind':src.kind}),'path':cfg['source_file'],'sha256':sha256(source),'frame_start':start,'frame_end_exclusive':stop,'total_frames':src.total_frames,'fps':fps,'frame_time_s':frame_time,'positions':src.conventions['positions'],'quaternions':src.conventions['quaternions'],**src.meta},'model':{'xml_path':str(xml.relative_to(ROOT)),'sha256':sha256(xml),'nq':model.nq,'nv':model.nv,'nu':model.nu,'root':f'{model.body(1).name} free joint, xyz metres + wxyz','joint_names':joint_names,'joint_units':'radians','hands':'fixed rubber hands; no finger actuators' if cfg['robot'] == 'unitree_g1' else 'as in the GMR model','feet':feet,'ik_config_path':str(r.xml_file).replace('assets/unitree_g1/g1_mocap_29dof.xml','general_motion_retargeting/ik_configs/bvh_lafan1_to_g1.json'),'ik_timestep_s':model.opt.timestep},'csv':{'columns':['root_x','root_y','root_z','qx','qy','qz','qw']+expected,'fps':fps,'resampled':False,'target':'pinned BeyondMimic CSV input, not its final training NPZ'},'outputs':{name:sha256(out/name) for name in ('reference.npz','motion.pkl','motion.csv')}}
+    ik_path = Path(IK_CONFIG_DICT[src.gmr_source][cfg['robot']])
     meta['model']['ik_config_path'] = str(ik_path.relative_to(ROOT))
     meta['model']['ik_config_sha256'] = sha256(ik_path)
     meta['environment'] = {name: importlib.metadata.version(name) for name in ('numpy','scipy','mujoco','mink','daqp','qpsolvers','viser')}

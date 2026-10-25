@@ -253,5 +253,26 @@
     "url": "https://storage.googleapis.com/qiayuanl_robot_descriptions/unitree_description.tar.gz",
     "archive_sha256": "b514bc9ddd1039c29a0e6feea9f57f1503f6657d07d97a4ef8a7b11fbebe6674",
     "urdf_sha256": "dbc8471004e9b0b85c27a4ebc1f0d90a727c1cf7ca9ef507b805596f2004d64b"
+  },
+  "GVHMR": {
+    "_note": "Optional video front end (docs/video.md). Not vendored; non-commercial research licence. Weights: official Google Drive folder or the Hugging Face mirror below; both verified identical by these hashes.",
+    "url": "https://github.com/zju3dv/GVHMR",
+    "commit": "ee960bb6e2ea2d381aa97f08e9b71ef320b624b1",
+    "weights_drive_folder": "https://drive.google.com/drive/folders/1eebJ13FUEXrKBawHpJroW0sNSxLjh9xD",
+    "weights_drive_ids": {
+      "dpvo/dpvo.pth": "1DE5GVftRCfZOTMp8YWF0xkGudDxK0nr0",
+      "gvhmr/gvhmr_siga24_release.ckpt": "1c9iCeKFN4Kr6cMPJ9Ss6Jdc3SZFnO5NP",
+      "hmr2/epoch=10-step=25000.ckpt": "1X5hvVqvqI9tvjUCb2oAlZxtgIKD9kvsc",
+      "vitpose/vitpose-h-multi-coco.pth": "1sR8xZD9wrZczdDVo6zKscNLwvarIRhP5",
+      "yolo/yolov8x.pt": "1_HGm-lqIH83-M1ML4bAXaqhm_eT2FKo5"
+    },
+    "weights_mirror": "https://huggingface.co/camenduru/GVHMR/resolve/main",
+    "weights_sha256": {
+      "dpvo/dpvo.pth": "30d02dc2b88a321cf99aad8e4ea1152a44d791b5b65bf95ad036922819c0ff12",
+      "gvhmr/gvhmr_siga24_release.ckpt": "4fae7da2de388d5da3514cb27a2d003f364dacb280e9cf88972b710e589c6b91",
+      "hmr2/epoch=10-step=25000.ckpt": "2dcf79638109781d1ae5f5c44fee5f55bc83291c210653feead9b7f04fa6f20e",
+      "vitpose/vitpose-h-multi-coco.pth": "50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
+      "yolo/yolov8x.pt": "c4d5a3f000d771762f03fc8b57ebd0aae324aeaefdd6e68492a9c4470f2d1e8b"
+    }
   }
 }
