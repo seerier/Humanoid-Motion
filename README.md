@@ -15,7 +15,7 @@ Both backends are scored by the same offline function on the same 230 held-out L
 | BeyondMimic (this repository, v0.1 release) | LAFAN1 train split (1.8 h of motion); 22 h on one A40 | Isaac Lab (its training simulator) | 190 | 216 |
 | BeyondMimic, same policy | as above | MuJoCo (sim-to-sim) | 190 | 215 |
 | SuperMimic, trained here | LAFAN1 train split (the same clips); 6.4 h on one A40 | MuJoCo | **195** | **224** |
-| SuperMimic, MorphMimic's released `unified_v2` policy, zero-shot | BONES-SEED, about 263 h of motion, three robots | MuJoCo | 198 | 226 |
+| SuperMimic, MorphMimic's released `unified_v2` policy (iteration 76,000, from its [live demo](https://lzyang2000.github.io/morphmimic/demo/)), zero-shot | One policy for G1, X2 and T2; MorphMimic's unified recipe trains on all of BONES-SEED (about 263 h), the exact settings of this checkpoint are not published | MuJoCo | 198 | 226 |
 
 On the 181 clips all four completed, the mean aligned body position error is 4.7 / 4.8 / 3.4 / 3.2 cm and the mean world root position error 38.5 / 41.3 / 23.0 / 21.6 cm (rows 1 to 4). In MuJoCo, the mean normalised return over all 230 clips (the SuperMimic paper's benchmark definition: reward up to the torso-criterion failure, divided by the best possible return) is 0.698 / 0.803 / 0.816 (rows 2 to 4).
 
