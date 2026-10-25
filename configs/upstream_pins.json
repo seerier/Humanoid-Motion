@@ -274,5 +274,11 @@
       "vitpose/vitpose-h-multi-coco.pth": "50e33f4077ef2a6bcfd7110c58742b24c5859b7798fb0eedd6d2215e0a8980bc",
       "yolo/yolov8x.pt": "c4d5a3f000d771762f03fc8b57ebd0aae324aeaefdd6e68492a9c4470f2d1e8b"
     }
+  },
+  "MorphMimic": {
+    "_note": "Optional SuperMimic backend (docs/supermimic.md): open SuperMimic implementation, used unmodified; installed by scripts/setup_supermimic.sh with its own uv.lock.",
+    "url": "https://github.com/lzyang2000/morphmimic.git",
+    "commit": "8cd92b6498ac693a7553723dfdf37aaa87e01ab3",
+    "license": "Apache-2.0"
   }
 }
