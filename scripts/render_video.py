@@ -10,6 +10,12 @@ offscreen renderer; nothing is re-simulated.
     python scripts/render_video.py pipeline --library ... --evaluation ... --clips dance2_subject4_f2820_3000
     # analysis only, not for demos: the reference as a translucent grey copy over the execution
     python scripts/render_video.py grid ... --clips jumps1_subject1_f2820_3000 --ghost
+    # one row per clip, one column per policy evaluated on the same library (e.g. two tracking backends)
+    python scripts/render_video.py compare --library ... --compare BeyondMimic=outputs/eval/c SuperMimic=outputs/eval/s \
+        --clips dance2_subject4_f2820_3000
+    # video clips: source video | retargeted G1 reference | one column per policy; --seconds 0 plays the whole clip
+    python scripts/render_video.py video --library outputs/video/runtime/video_sf.json --compare C=outputs/eval/c_video \
+        --clips squat_sf --source-video squat_sf=data/video/squat.mp4 --seconds 0 --fps 30
 
 Look: the G1 in its own two-tone materials on a light checker floor (the squares show travel and speed while the
 camera follows the robot), a key light with shadows that follows the camera target, a soft fill light and 8x
@@ -438,11 +444,93 @@ def render_pipeline(args) -> None:
     write(frames, args.out, args.still, args.gif, args.webp)
 
 
+def render_compare(args) -> None:
+    """Rows = clips; columns = policies evaluated on the same library, every panel with the same camera rule."""
+    columns = []
+    for entry in args.compare:
+        label, separator, folder = entry.partition('=')
+        if not separator:
+            raise ValueError('--compare entries are LABEL=EVALUATION_DIR')
+        columns.append((label, Path(folder)))
+    rows = []
+    for clip in args.clips:
+        row = []
+        for label, folder in columns:
+            _, reference, manifest, clip_dir = load_clip(args.library, folder, clip)
+            run = TrackedRun(Stage(args.width, args.height, lens(args.camera)), clip_dir, reference, manifest,
+                             args.camera, args.follow, args.orbit, args.blur)
+            run.show_ghost, run.label = args.ghost, label
+            print(clip, label, 'complete' if run.complete else f'fails at step {run.fail}')
+            row.append(run)
+        rows.append(row)
+    frames = [grid([[run.frame(i / FPS) for run in row] for row in rows]) for i in range(int(args.seconds * FPS))]
+    write(frames, args.out, args.still, args.gif, args.webp)
+
+
+def video_frames(path: Path, w: int, h: int) -> np.ndarray:
+    """Every frame of a video scaled to fit w x h, letterboxed on the background colour: uint8 [n, h, w, 3]."""
+    pad = 'color=0x{:02x}{:02x}{:02x}'.format(*BG)
+    vf = f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:{pad}'
+    raw = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-loglevel', 'error', '-i', str(path), '-vf', vf, '-f', 'rawvideo',
+                          '-pix_fmt', 'rgb24', '-'], check=True, capture_output=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(-1, h, w, 3)
+
+
+def render_video_rows(args) -> None:
+    """Rows = video clips; columns = the source video, the retargeted G1 reference, then one column per --compare
+    evaluation. The source video (--source-fps, first frame = reference frame 0) sets the time axis."""
+    sources = {}
+    for entry in args.source_video or []:
+        clip, separator, path = entry.partition('=')
+        if not separator:
+            raise ValueError('--source-video entries are CLIP=VIDEO_FILE')
+        sources[clip] = Path(path)
+    columns = [(label, Path(folder)) for label, _, folder in (e.partition('=') for e in args.compare)]
+    rows, durations = [], []
+    for n, clip in enumerate(args.clips):
+        top = n == 0
+        _, reference, manifest, _ = load_clip(args.library, columns[0][1], clip)
+        rfps = float(reference['fps'].item())
+        durations.append((len(reference['joint_pos']) - 1) / rfps)
+        frames = video_frames(sources[clip], args.width, args.height)
+
+        def source(t, frames=frames, top=top):
+            img = frames[min(int(round(t * args.source_fps)), len(frames) - 1)].copy()
+            return caption(img, 'Source video') if top else img
+        rstage = Stage(args.width, args.height, lens(args.camera))
+        rdata = mujoco.MjData(rstage.m)
+        root = manifest['body_names'].index('pelvis')
+        qadr, qsrc = joint_index(rstage.m, manifest['joint_names'])
+        rview = make_view(args.camera, reference['body_pos_w'], reference['body_quat_w'][:, root], rfps, args.follow, args.orbit)
+
+        def kinematic(t, rstage=rstage, rdata=rdata, ref=reference, root=root, qadr=qadr, qsrc=qsrc, rfps=rfps,
+                      rview=rview, top=top):
+            r = min(int(round(t * rfps)), len(ref['joint_pos']) - 1)
+            pose(rstage.m, rdata, qadr, qsrc, ref['body_pos_w'][r, root], ref['body_quat_w'][r, root], ref['joint_pos'][r])
+            img = rstage.shoot(rdata, rview, r)
+            return caption(img, PIPELINE_LABELS[1]) if top else img
+        row = [source, kinematic]
+        for label, folder in columns:
+            _, _, _, clip_dir = load_clip(args.library, folder, clip)
+            run = TrackedRun(Stage(args.width, args.height, lens(args.camera)), clip_dir, reference, manifest,
+                             args.camera, args.follow, args.orbit, args.blur)
+            run.show_ghost, run.label = args.ghost, label
+            print(clip, label, 'complete' if run.complete else f'fails at step {run.fail}')
+            row.append(run.frame)
+        rows.append(row)
+    seconds = args.seconds if args.seconds > 0 else max(durations)
+    frames = [grid([[f(i / FPS) for f in row] for row in rows]) for i in range(int(seconds * FPS) + 1)]
+    write(frames, args.out, args.still, args.gif, args.webp)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('layout', choices=['grid', 'pipeline'])
+    parser.add_argument('layout', choices=['grid', 'pipeline', 'compare', 'video'])
     parser.add_argument('--library', type=Path, required=True, help='Imported library the policy was evaluated on')
-    parser.add_argument('--evaluation', type=Path, required=True, help='evaluate.py output directory')
+    parser.add_argument('--evaluation', type=Path, help='evaluate.py output directory (grid, pipeline)')
+    parser.add_argument('--compare', nargs='+', metavar='LABEL=DIR', help='compare, video layouts: one evaluation per column')
+    parser.add_argument('--source-video', nargs='+', metavar='CLIP=FILE', help='video layout: the source video of each clip')
+    parser.add_argument('--source-fps', type=float, default=30., help='video layout: frame rate of the source videos')
     parser.add_argument('--clips', nargs='+', required=True)
     parser.add_argument('--labels', nargs='+', help='grid layout: one panel label per clip (default: motion category; "" for none)')
     parser.add_argument('--ghost', action='store_true', help='grid layout: also draw the reference as a translucent grey copy (analysis only; leave off for demos)')
@@ -459,12 +547,15 @@ def main() -> None:
     parser.add_argument('--webp', type=Path, help='also write an animated WebP here')
     parser.add_argument('--width', type=int, default=400)
     parser.add_argument('--height', type=int, default=300)
-    parser.add_argument('--seconds', type=float, default=6.0)
+    parser.add_argument('--seconds', type=float, default=6.0, help='length; 0 = the longest clip (video layout)')
     parser.add_argument('--still', type=float, default=2.6, help='time of the PNG still, seconds')
     args = parser.parse_args()
     global FPS
     FPS = args.fps
-    (render_grid if args.layout == 'grid' else render_pipeline)(args)
+    multi = args.layout in ('compare', 'video')
+    if multi != (args.evaluation is None) or multi != bool(args.compare):
+        parser.error('grid and pipeline take --evaluation; compare and video take --compare')
+    {'grid': render_grid, 'pipeline': render_pipeline, 'compare': render_compare, 'video': render_video_rows}[args.layout](args)
 
 
 if __name__ == '__main__':
