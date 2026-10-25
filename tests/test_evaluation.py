@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from humanoid_motion.evaluation import completion_counts, pose_errors, validate_transfer_contract
+from humanoid_motion.evaluation import completion_counts, pose_errors, score_attempt, validate_transfer_contract
 
 
 def test_alignment_does_not_hide_world_drift_or_vertical_error():
@@ -60,3 +60,27 @@ def test_transfer_rejects_semantic_mismatch_despite_equal_array_sizes():
         wrong = dict(changed, **{field: replacement})
         with pytest.raises(ValueError):
             validate_transfer_contract(manifest, wrong)
+
+
+def test_offline_score_matches_the_online_stopping_rule():
+    names = ['pelvis', 'torso_link', 'left_ankle_roll_link', 'right_ankle_roll_link', 'left_wrist_yaw_link',
+             'right_wrist_yaw_link']
+    reference = np.tile([[0., 0., .8], [0., 0., 1.1], [0., .1, .05], [0., -.1, .05], [.2, .2, .9], [.2, -.2, .9]],
+                        (10, 1, 1))
+    reference_q = np.tile([1., 0, 0, 0], (10, 6, 1))
+    perfect = score_attempt(reference, reference_q, reference.copy(), reference_q.copy(), names)
+    assert perfect['complete'] and perfect['first_failure_frame'] is None and perfect['scored_frames'] == 10
+    actual, actual_q = reference.copy(), reference_q.copy()
+    actual[0, 1, 2] -= .5                                   # frame 0 is the initialization: never checked
+    actual[6, 1, 2] -= .3                                   # torso 0.3 m low at frame 6
+    actual[4, 4, 2] += .26                                  # left wrist 0.26 m high at frame 4
+    actual_q[8, 1] = Rotation.from_euler('x', np.pi / 2).as_quat()[[3, 0, 1, 2]]   # torso tipped over at frame 8
+    beyond = score_attempt(reference, reference_q, actual, actual_q, names)
+    assert not beyond['complete'] and beyond['first_failure_frame'] == 4 and beyond['failure_terms'] == ['ee_body_pos']
+    assert beyond['scored_frames'] == 5 and beyond['completion_fraction'] == 4 / 9
+    anchor = score_attempt(reference, reference_q, actual, actual_q, names, 'anchor')
+    assert anchor['first_failure_frame'] == 6 and anchor['failure_terms'] == ['anchor_pos']
+    actual[6, 1, 2] += .3
+    assert score_attempt(reference, reference_q, actual, actual_q, names, 'anchor')['failure_terms'] == ['anchor_ori']
+    stopped = score_attempt(reference, reference_q, reference[:7], reference_q[:7], names)
+    assert not stopped['complete'] and stopped['first_failure_frame'] is None

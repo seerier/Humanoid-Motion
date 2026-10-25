@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarize one or more evaluate.py outputs as a Markdown table: completions per category and tracking errors.
 
-    python scripts/summarize_results.py ours=outputs/eval/test [other=path/to/other/eval]
+    python scripts/summarize_results.py ours=outputs/eval/test [other=path/to/other/eval/scores_beyondmimic.json]
 
 Errors are means over clips that every listed policy completed, so columns stay comparable: world root
 position error (raw world frame, includes drift) and aligned body position error (heading and XY aligned,
@@ -17,7 +17,8 @@ def load(entry: str) -> tuple[str, dict]:
     label, separator, folder = entry.partition('=')
     if not separator:
         label, folder = Path(entry).name, entry
-    results = json.loads((Path(folder) / 'results.json').read_text())
+    path = Path(folder)  # an evaluation directory (its results.json) or a scores file from score_rollouts.py
+    results = json.loads((path if path.is_file() else path / 'results.json').read_text())
     return label, {row['clip_id']: row for row in results['rows']}
 
 
