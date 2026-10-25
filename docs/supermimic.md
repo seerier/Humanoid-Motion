@@ -32,7 +32,9 @@ Not switchable, kept as MorphMimic implements them: position-free goals (the goa
 
 ## Training on LAFAN1
 
-The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. With the paper's TF32 setting one NVIDIA A40 ran about 0.86 iterations per second with 4,096 environments.
+The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. With 4,096 environments one NVIDIA A40 runs about 0.86 iterations per second with the paper's TF32 setting (run 1) and 1.41 with MorphMimic's bfloat16 default (run 2). Run 2 was stopped by a scheduler preemption after 6.4 h of wall clock including kernel compilation (about 25,000 iterations); its last checkpoint, iteration 24,000, is the reported policy. Every 2,000th to 4,000th checkpoint was evaluated on the test split (learning curve in the README); the reported one was not selected on it.
+
+The training log's `nret` is not a performance measure here: it divides each finished episode's return by that episode's length, and MorphMimic's return-based reset sampling starts more episodes at the reference segments with low returns, so the episodes it averages over shift toward hard segments. In run 2 it fell from 0.47 to about 0.28 over the first 8,000 iterations while the test-set completions rose from 166 to 190 and the normalised return from 0.61 to 0.76.
 
 ## Comparison protocol
 
