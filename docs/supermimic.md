@@ -1,6 +1,6 @@
 # SuperMimic tracking backend
 
-[SuperMimic](https://arxiv.org/abs/2610.28480) (Liao et al., CoRL 2026) trains a motion-tracking policy by backpropagating through a learned, differentiable world model instead of using PPO. Its authors have not released code. This repository uses the open, independent implementation in [MorphMimic](https://github.com/lzyang2000/morphmimic) (Yang et al., 2026; Apache-2.0), pinned at commit `8cd92b6`, in its single-robot G1 mode, with its code unmodified. MorphMimic runs on [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp).
+[SuperMimic](https://arxiv.org/abs/2610.28480) (Liao et al., CoRL 2026) trains a motion-tracking policy by backpropagating through a learned, differentiable world model instead of using PPO. Its authors have not released code. This repository uses the open, unofficial reimplementation in [MorphMimic](https://github.com/lzyang2000/morphmimic) (Yang et al., 2026; Apache-2.0), pinned at commit `8cd92b6`, with its code unmodified. MorphMimic's README states that its SuperMimic base was written from the paper alone and is not reviewed or endorsed by the SuperMimic authors. On top of it MorphMimic adds cross-embodiment training (a morphology input, decoder FiLM, latent alignment, shared modules across robots) and a five-point teleoperation interface. This repository trains in single-robot mode (`--robot g1`, no `--robots`), where `Trainer._resolve_cfg` leaves the morphology input off, turns FiLM off and sets the latent-alignment weight to zero, and without `--kp-interface`; the G1 is MorphMimic's canonical 29-joint layout, so its joint map is the identity. What remains is MorphMimic's reading of the SuperMimic paper, with the switches below. MorphMimic runs on [mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp).
 
 What this repository adds around it (`src/humanoid_motion/tracking/supermimic/`):
 
@@ -40,4 +40,20 @@ The training log's `nret` is not a performance measure here: it divides each fin
 
 Both backends are scored by `humanoid_motion.evaluation.score_attempt` on the 230 LAFAN1 test clips: one nominal attempt per clip from its first frame, failure at the first frame where a BeyondMimic termination fires (torso height or any ankle or wrist height more than 25 cm off, or torso tilt past the threshold). The SuperMimic paper's own failure definition (torso height and tilt only) is reported alongside. Every attempt starts from the reference's first frame in both simulators (MorphMimic's own eval reset clips the start pose's joint angles to the soft limits; `scripts/evaluate_mujoco.py --start morphmimic` keeps that start instead). The offline scorer reproduces the online Isaac evaluator exactly (190 / 230 for the released BeyondMimic policy, the same first failure frame on all 230 clips).
 
-The BeyondMimic policy is native to Isaac Lab (PhysX) and the SuperMimic policies to MuJoCo. To compare them in one engine, `scripts/evaluate_mujoco.py --policy beyondmimic` also runs the BeyondMimic policy in the same MuJoCo scene: its PD gains, torque limits, action scale, default pose and 5 ms x 4 control timing match the Isaac G1 to 1e-6, and its observation is rebuilt from the MuJoCo state exactly as the Isaac terms compute it.
+The BeyondMimic policy is native to Isaac Lab (PhysX) and the SuperMimic policy to MuJoCo. To compare them in one engine, `scripts/evaluate_mujoco.py --policy beyondmimic` also runs the BeyondMimic policy in the same MuJoCo scene: its PD gains, torque limits, action scale, default pose and 5 ms x 4 control timing match the Isaac G1 to 1e-6, and its observation is rebuilt from the MuJoCo state exactly as the Isaac terms compute it.
+
+## Reference: MorphMimic's cross-embodiment policy
+
+MorphMimic publishes one trained policy, `unified_v2` at iteration 76,000, as the `policy.onnx` of its [live demo](https://lzyang2000.github.io/morphmimic/demo/) (SHA256 `081af621...`). It is a MorphMimic model, not a SuperMimic one: one policy for the Unitree G1, AgiBot X2 Ultra and Booster T2, trained in multi-robot mode. Its training settings are not published; MorphMimic's README trains its unified model on all of BONES-SEED (about 263 h) for 40,000 iterations. It is not part of the main comparison, because this repository needs no cross-embodiment and the policy shares neither training data nor method with the other two. The same harness evaluates it zero-shot, from the same exported-policy interface (`scripts/evaluate_mujoco.py --policy supermimic --deploy <export dir>`):
+
+| Policy | Completed, BeyondMimic criterion | Completed, SuperMimic criterion | Normalised return | With 20 ms actuator delay |
+|---|---:|---:|---:|---:|
+| BeyondMimic, MuJoCo | 190 | 215 | 0.698 | 161 |
+| SuperMimic trained here | 195 | 224 | 0.803 | 193 |
+| MorphMimic `unified_v2`, zero-shot | 198 | 226 | 0.816 | 198 |
+
+On the 181 test clips all four rows of the earlier comparison completed (BeyondMimic in Isaac and in MuJoCo, SuperMimic trained here, `unified_v2`), the mean aligned body position error is 4.7 / 4.8 / 3.4 / 3.2 cm and the mean world root position error 38.5 / 41.3 / 23.0 / 21.6 cm. On the three test videos it completes the squat under the BeyondMimic criterion (13 cm root drift) and all three under the torso-only criterion.
+
+![The BeyondMimic policy, the SuperMimic policy trained here and MorphMimic's cross-embodiment unified_v2 policy tracking the same held-out clips.](media/compare_morphmimic.webp)
+
+*Left to right: BeyondMimic (Isaac Lab), SuperMimic trained here and MorphMimic `unified_v2` (both MuJoCo); all three complete all three clips.*

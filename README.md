@@ -1,6 +1,6 @@
 # Humanoid-Motion
 
-An end-to-end pipeline that turns human motion, from motion capture or a single video, into physically tracked motion on the Unitree G1 humanoid: retarget it to the robot with GMR and audit every clip, track it with one of two physics backends (a multi-motion PPO policy in the BeyondMimic environment in Isaac Lab, or SuperMimic's world-model policy through the open MorphMimic implementation in MuJoCo Warp), then score both with one evaluation protocol and replay the recorded physics.
+An end-to-end pipeline that turns human motion, from motion capture or a single video, into physically tracked motion on the Unitree G1 humanoid: retarget it to the robot with GMR and audit every clip, track it with one of two physics backends (a multi-motion PPO policy in the BeyondMimic environment in Isaac Lab, or a SuperMimic world-model policy trained with MorphMimic's unofficial reimplementation in MuJoCo Warp), then score both with one evaluation protocol and replay the recorded physics.
 
 ![One policy tracking six held-out LAFAN1 test clips on the Unitree G1: dance, run, fight and sports, fight, ground moves, fall and get up.](docs/media/teaser.webp)
 
@@ -8,34 +8,35 @@ An end-to-end pipeline that turns human motion, from motion capture or a single 
 
 ## Two tracking backends, one scorer (v0.3)
 
+The second backend follows SuperMimic (Liao et al., CoRL 2026), which learns a differentiable world model and trains the policy through it instead of with PPO. Its authors have not released code; this repository trains it with the open, unofficial reimplementation in MorphMimic's codebase, in single-robot mode, where MorphMimic's cross-embodiment additions are switched off (see [docs/supermimic.md](docs/supermimic.md)).
+
 Both backends are scored by the same offline function on the same 230 held-out LAFAN1 test clips, from recorded states: one attempt per clip from its first frame, no resets, no assistance. "BeyondMimic criterion" fails an attempt at the first frame where the torso height or any ankle or wrist height is more than 25 cm off the reference, or the torso tilt passes BeyondMimic's threshold; the SuperMimic paper's criterion uses the torso terms only. The scorer reproduces the online Isaac evaluator exactly (190 / 230, the same first failure frame on every clip).
 
-| Policy | Training data and compute | Simulator | Completed, BeyondMimic criterion | Completed, SuperMimic criterion |
+| Policy | Training | Simulator | Completed, BeyondMimic criterion | Completed, SuperMimic criterion |
 |---|---|---|---:|---:|
-| BeyondMimic (this repository, v0.1 release) | LAFAN1 train split (1.8 h of motion); 22 h on one A40 | Isaac Lab (its training simulator) | 190 | 216 |
+| BeyondMimic (this repository, v0.1 release) | LAFAN1 train split (1,062 clips, 1.8 h of motion); 22 h on one A40 | Isaac Lab (its training simulator) | 190 | 216 |
 | BeyondMimic, same policy | as above | MuJoCo (sim-to-sim) | 190 | 215 |
-| SuperMimic, trained here | LAFAN1 train split (the same clips); 6.4 h on one A40 | MuJoCo | **195** | **224** |
-| SuperMimic, MorphMimic's released `unified_v2` policy (iteration 76,000, from its [live demo](https://lzyang2000.github.io/morphmimic/demo/)), zero-shot | One policy for G1, X2 and T2; MorphMimic's unified recipe trains on all of BONES-SEED (about 263 h), the exact settings of this checkpoint are not published | MuJoCo | 198 | 226 |
+| SuperMimic (unofficial reimplementation), trained here | the same 1,062 clips; 6.4 h on one A40 | MuJoCo | **195** | **224** |
 
-On the 181 clips all four completed, the mean aligned body position error is 4.7 / 4.8 / 3.4 / 3.2 cm and the mean world root position error 38.5 / 41.3 / 23.0 / 21.6 cm (rows 1 to 4). In MuJoCo, the mean normalised return over all 230 clips (the SuperMimic paper's benchmark definition: reward up to the torso-criterion failure, divided by the best possible return) is 0.698 / 0.803 / 0.816 (rows 2 to 4).
+On the 183 clips all three completed, the mean aligned body position error is 4.7 / 4.8 / 3.4 cm and the mean world root position error 38.7 / 41.4 / 23.3 cm (rows 1 to 3). In MuJoCo, the mean normalised return over all 230 clips (the SuperMimic paper's benchmark definition: reward up to the torso-criterion failure, divided by the best possible return) is 0.698 for the BeyondMimic policy and 0.803 for the SuperMimic policy.
 
-![Test-set learning curve of the SuperMimic policy trained here: completions and normalised return against wall-clock training time, with the BeyondMimic policy and the released SuperMimic policy as reference lines.](docs/media/supermimic_learning_curve.png)
+![Test-set learning curve of the SuperMimic policy trained here: completions and normalised return against wall-clock training time, with the BeyondMimic policy as reference lines.](docs/media/supermimic_learning_curve.png)
 
-*Every 2,000th to 4,000th checkpoint of the SuperMimic run on the 230 test clips, against wall-clock time on one A40 (including compilation). Dashed: the BeyondMimic policy (22 h of training) and the released SuperMimic policy. A scheduler preemption stopped the run after 6.7 h; its last checkpoint (iteration 24,000, at 6.4 h) is the one reported, with no selection on the test set.*
+*Every 2,000th to 4,000th checkpoint of the SuperMimic run on the 230 test clips, against wall-clock time on one A40 (including compilation). Dashed: the BeyondMimic policy after 22 h of training, in Isaac Lab and in MuJoCo. A scheduler preemption stopped the run after 6.7 h; its last checkpoint (iteration 24,000, at 6.4 h) is the one reported, with no selection on the test set.*
 
 What the numbers say, and what they do not:
 
-- **Same data.** Rows 1 to 3 train on the same 1,062 LAFAN1 clips (the SuperMimic motion library is built from the same 50 Hz frames and checked against the same URDF kinematics). The SuperMimic policy reaches the BeyondMimic policy's 190 completions after about 2 h and ends 5 clips ahead, with lower pose and drift errors, after under a third of the training time.
-- **Same engine.** The BeyondMimic policy also runs in the MuJoCo scene the SuperMimic policies are evaluated in (same PD gains, torque limits, action scale and control timing as the Isaac G1, observation rebuilt from the MuJoCo state). It completes 190 clips there, as in Isaac, with the same verdict on 226 of 230 clips, so rows 2 to 4 compare the policies in one engine. Every attempt in both simulators starts from the reference's first frame.
-- **Not the algorithms alone.** The two training setups also differ in simulator (Isaac Lab against MuJoCo Warp), in what the policy sees (MorphMimic's goal includes the reference torso orientation relative to the robot's; the BeyondMimic observation here does not) and in randomisation (MorphMimic's defaults randomise the actuator delay between 0 and 40 ms). Each row is one training run and one evaluation.
-- **Actuator delay.** With a 20 ms delay added in evaluation, the BeyondMimic policy drops from 190 to 161 completions, the SuperMimic policy trained here from 195 to 193, and the released one stays at 198. The run here trained with MorphMimic's default random delay of 0 to 40 ms and the BeyondMimic policy without any, the likely reason for the gap; the released policy's training settings are not published, and no control run isolates the effect.
-- **Drift.** All policies are blind to their world position by design. On the test clips the BeyondMimic policy's root drift is 1.7 to 1.9 times that of the SuperMimic policies; on the longer video clips below, the policy trained here drifts the most.
-- **Where they fail.** Almost every failure is an ankle or wrist more than 25 cm off its reference height. Both SuperMimic policies complete more falls and get-ups (7 against 3 of 11) and runs (22 against 19 in Isaac and 20 in MuJoCo, of 22), and slightly fewer jumps (6 against 7 of 17).
+- **Same data.** Both policies train on the same 1,062 LAFAN1 clips (the SuperMimic motion library is built from the same 50 Hz frames and checked against the same URDF kinematics). The SuperMimic policy reaches the BeyondMimic policy's 190 completions after about 2 h and ends 5 clips ahead, with lower pose and drift errors, after under a third of the training time.
+- **Same engine.** The BeyondMimic policy also runs in the MuJoCo scene the SuperMimic policy is evaluated in (same PD gains, torque limits, action scale and control timing as the Isaac G1, observation rebuilt from the MuJoCo state). It completes 190 clips there, as in Isaac, with the same verdict on 226 of 230 clips, so rows 2 and 3 compare the policies in one engine. Every attempt in both simulators starts from the reference's first frame.
+- **Not the algorithms alone.** The two training setups also differ in simulator (Isaac Lab against MuJoCo Warp), in what the policy sees (the SuperMimic goal includes the reference torso orientation relative to the robot's, read from the IMU; the BeyondMimic observation here does not, so its policy cannot see its heading error) and in randomisation (MorphMimic's defaults randomise the actuator delay between 0 and 40 ms). Neither policy sees its position offset from the reference. Each row is one training run and one evaluation.
+- **Actuator delay.** With a 20 ms delay added in evaluation, the BeyondMimic policy drops from 190 to 161 completions and the SuperMimic policy from 195 to 193. The SuperMimic run trained with a random delay and the BeyondMimic policy without one, the likely reason for the gap; no control run isolates it.
+- **Drift.** Both policies are blind to their world position by design. On the test clips the BeyondMimic policy's root drift is 1.7 to 1.8 times that of the SuperMimic policy; on the longer video clips below it is the other way round.
+- **Where they fail.** Almost every failure is an ankle or wrist more than 25 cm off its reference height. The SuperMimic policy completes more falls and get-ups (7 against 3 of 11) and runs (22 against 19 in Isaac and 20 in MuJoCo, of 22), and slightly fewer jumps (6 against 7 of 17).
 - **Paper settings.** A first SuperMimic run with every switch the paper gives a value for set to that value diverged near iteration 3,000 (critic loss up a hundredfold in 400 iterations, value estimate past the largest possible return); the reported run uses MorphMimic's own defaults, see [docs/supermimic.md](docs/supermimic.md).
 
-![BeyondMimic (Isaac Lab), SuperMimic trained here and the released SuperMimic policy (MuJoCo) tracking the same held-out clips: dance, fight, fall and get up.](docs/media/compare3.webp)
+![The BeyondMimic policy (Isaac Lab) and the SuperMimic policy trained here (MuJoCo) tracking the same held-out clips: dance, fight, fall and get up.](docs/media/compare.webp)
 
-*The same held-out clips tracked by the BeyondMimic policy (left, recorded in Isaac Lab), the SuperMimic policy trained here on the same data (middle) and MorphMimic's released SuperMimic policy (right), both recorded in MuJoCo; all complete all three.*
+*The same held-out clips tracked by the BeyondMimic policy (left, recorded in Isaac Lab) and the SuperMimic policy trained on the same data (right, recorded in MuJoCo); both complete all three.*
 
 ## From a single video (v0.3)
 
@@ -43,9 +44,9 @@ A monocular video goes through [GVHMR](https://github.com/zju3dv/GVHMR) (world-g
 
 ![A squat video from Pexels, the retargeted G1 reference, and the BeyondMimic and SuperMimic policies tracking it zero-shot.](docs/media/video_squat.webp)
 
-*Source video | retargeted G1 reference | BeyondMimic policy (Isaac Lab) | released SuperMimic policy (MuJoCo), first 12 s, both zero-shot. Video: Pexels (free licence).*
+*Source video | retargeted G1 reference | BeyondMimic policy (Isaac Lab) | SuperMimic policy trained here (MuJoCo), first 12 s, both zero-shot. Video: Pexels (free licence).*
 
-On three test videos (a squat from Pexels and two CMU Panoptic walking and gesturing windows), the BeyondMimic policy (in Isaac and in MuJoCo) and the SuperMimic policy trained here each complete two; the released SuperMimic policy completes the squat under the BeyondMimic criterion and all three under its own torso-only criterion. On these 20 to 30 s clips, three to five times longer than the 6 s training windows, the mean root drift of the completed attempts is 35 to 47 cm for the BeyondMimic policy, 73 to 93 cm for the SuperMimic policy trained here and 13 cm for the released one. The third video fails in retargeting, not tracking: GMR's inverse kinematics settles into a local minimum on the first frame and keeps one arm behind the back for the whole clip, and the stage audit (`humanoid_motion.video.stage_audit`) flags it at the retargeting stage. See [docs/video.md](docs/video.md).
+On three test videos (a squat from Pexels and two CMU Panoptic walking and gesturing windows), the BeyondMimic policy (in Isaac and in MuJoCo) and the SuperMimic policy each complete two, and both fail the third. On these 20 to 30 s clips, three to five times longer than the 6 s training windows, the mean root drift of the completed attempts is 35 to 47 cm for the BeyondMimic policy and 73 to 93 cm for the SuperMimic policy. The third video fails in retargeting, not tracking: GMR's inverse kinematics settles into a local minimum on the first frame and keeps one arm behind the back for the whole clip, and the stage audit (`humanoid_motion.video.stage_audit`) flags it at the retargeting stage. See [docs/video.md](docs/video.md).
 
 ## BeyondMimic backend results (v0.1)
 
@@ -242,7 +243,7 @@ The two stages exchange only reference motion files, so either backend can be re
 
 - Simulation only: Isaac Lab and MuJoCo (sim-to-sim for the BeyondMimic policy); no hardware deployment.
 - One attempt per test clip from a nominal start; the only robustness test is a fixed 20 ms actuator delay.
-- The two backends are compared with one scorer, but the released SuperMimic policy was trained on far more data and compute; only the SuperMimic policy trained here holds the training data fixed.
+- The SuperMimic backend is an unofficial reimplementation; its results say how this implementation performs on this data, not how the authors' code would.
 - Every policy is weakest on jumps and chained actions (the BeyondMimic policy also on falls and get-ups), and every policy drifts in the world frame.
 - Video references are only as good as the monocular reconstruction and the retargeting: three test videos, one of which fails in retargeting.
 - Flat ground, Unitree G1 only.
