@@ -10,29 +10,29 @@ What this repository adds around it (`src/humanoid_motion/tracking/supermimic/`)
 
 ## Switch list
 
-Training uses MorphMimic's command-line flags only. Every switch for which the paper gives a value is set to the paper's value; the paper's gaps keep MorphMimic's defaults.
+Training uses MorphMimic's command-line flags only. A first LAFAN1 run set every switch for which the paper gives a value to the paper's value (column "Run 1") and kept MorphMimic's defaults for the paper's gaps. It diverged near iteration 3,000: the critic loss rose about fiftyfold within 100 iterations, the value estimate approached its upper bound (10) and the episode length and return fell; it had no checkpoint from before the divergence. The policy reported here (column "Run 2") is trained with MorphMimic's own defaults throughout, the recipe behind its released policies, rather than a mix of the two.
 
-| Item | Paper | MorphMimic default | This repository | Flag |
-|---|---|---|---|---|
-| World-model MLP | plain (2048, 2048, 2048) (Table A.4) | LayerNorm after each hidden layer | plain | `--no-wm-layer-norm` |
-| Critic MLP | plain (256, 128) (Table A.4) | LayerNorm after each hidden layer | plain | `--no-critic-layer-norm` |
-| Critic targets | TD(λ) targets of Eq. 3, unclamped | clamped at 10 (largest possible return) | unclamped | `--no-critic-target-clip` |
-| World-model-only warm phase | none: all networks update every iteration (Alg. A.1) | 500 iterations | none | `--wm-only-iters 0` |
-| Actuator delay | none (Table A.3) | random 0 to 40 ms | none | `--no-actuator-delay` |
-| Imagination start states | any replay state | at least H + K frames before the clip end | any replay state | `--no-avoid-clip-end` |
-| Precision | TF32 | bfloat16 autocast | TF32 | `--no-bf16` |
-| World-model residual scale | not given | one-step RMS of the warm-up replay | MorphMimic default | `--residual-scale step` |
-| World-model frame | not given | pelvis frame plus gravity and body heights | MorphMimic default | `--wm-frame root` |
-| Termination head | learned, form not given | hazard model on the two termination margins | MorphMimic default | `--termination hazard` |
-| Reset-sampler return normalisation | not given | best return still reachable | MorphMimic default | `--reset-norm remaining` |
-| Critic input | (ŝ, g, ξ) | also the reference anchor position in the robot frame | MorphMimic default | `--critic-anchor-pos` |
-| Rollout, batch, learning-rate schedule | H = 32, k = 8, 4,096 envs, UTD 0.4, 2e-4 cosine to 0.03x over 250k of 320k iterations | same | same | defaults |
+| Item | Paper | MorphMimic default | Run 1 (diverged) | Run 2 (reported) | Flag for the paper value |
+|---|---|---|---|---|---|
+| World-model MLP | plain (2048, 2048, 2048) (Table A.4) | LayerNorm after each hidden layer | plain | LayerNorm | `--no-wm-layer-norm` |
+| Critic MLP | plain (256, 128) (Table A.4) | LayerNorm after each hidden layer | plain | LayerNorm | `--no-critic-layer-norm` |
+| Critic targets | TD(λ) targets of Eq. 3, unclamped | clamped at 10 (largest possible return) | unclamped | clamped | `--no-critic-target-clip` |
+| World-model-only warm phase | none: all networks update every iteration (Alg. A.1) | 500 iterations | none | 500 iterations | `--wm-only-iters 0` |
+| Actuator delay | none (Table A.3) | random 0 to 40 ms | none | 0 to 40 ms | `--no-actuator-delay` |
+| Imagination start states | any replay state | at least H + K frames before the clip end | any replay state | away from clip ends | `--no-avoid-clip-end` |
+| Precision | TF32 | bfloat16 autocast | TF32 | bfloat16 | `--no-bf16` |
+| World-model residual scale | not given | one-step RMS of the warm-up replay | default | default | |
+| World-model frame | not given | pelvis frame plus gravity and body heights | default | default | |
+| Termination head | learned, form not given | hazard model on the two termination margins | default | default | |
+| Reset-sampler return normalisation | not given | best return still reachable | default | default | |
+| Critic input | (ŝ, g, ξ) | also the reference anchor position in the robot frame | default | default | |
+| Rollout, batch, learning-rate schedule | H = 32, k = 8, 4,096 envs, UTD 0.4, 2e-4 cosine to 0.03x over 250k of 320k iterations | same | same | same | |
 
 Not switchable, kept as MorphMimic implements them: position-free goals (the goal carries no robot position; only the critic sees it), analytic reward and observation heads, a running input normaliser for the policy, the torso as the anchor body for the "root" reward and termination terms (as in BeyondMimic and mjlab), and domain randomisation drawn once per environment at start-up.
 
 ## Training on LAFAN1
 
-The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. One NVIDIA A40 runs about 0.85 iterations per second with 4,096 environments.
+The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. With the paper's TF32 setting one NVIDIA A40 ran about 0.86 iterations per second with 4,096 environments.
 
 ## Comparison protocol
 

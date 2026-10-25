@@ -15,7 +15,7 @@ dependencies = ["numpy", "scipy"]
 
 [project.optional-dependencies]
 # Video front end (scripts/video_to_reference.py, docs/video.md); GVHMR itself runs in its own environment.
-video = ["smplx==0.1.28"]  # also in requirements/cpu.lock.txt; torch comes from the lock
+video = ["smplx==0.1.28"]  # non-commercial licence (MPI), so not in requirements/cpu.lock.txt; torch comes from the lock
 
 [project.urls]
 Repository = "https://github.com/seerier/Humanoid-Motion"
