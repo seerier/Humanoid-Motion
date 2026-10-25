@@ -143,7 +143,7 @@ def mm_state(m, d, sim, robot) -> np.ndarray:
 
 
 def play_beyondmimic(checkpoint: Path, xml: Path, clip: Path, motion: dict, manifest: dict, body_names: list[str],
-                     joint_names: list[str], start_joint_pos: np.ndarray | None = None) -> dict:
+                     joint_names: list[str], start_joint_pos: np.ndarray | None = None, delay_ms: float = 0.) -> dict:
     """Play one clip with the BeyondMimic policy in MuJoCo; same recording as supermimic.evaluate.play."""
     import mujoco
     from deploy.sim2sim.obs import Robot
@@ -176,11 +176,15 @@ def play_beyondmimic(checkpoint: Path, xml: Path, clip: Path, motion: dict, mani
         out['mm_state'].append(mm_state(m, d, sim, robot))
 
     capture()
-    for step in range(len(ref['states']) - 1):    # sim_node.run with delay 0
+    lag, pending, hold = round(delay_ms / 1e3 / robot.physics_dt), [], d.qpos[sim.qadr].copy()
+    for step in range(len(ref['states']) - 1):    # sim_node.run, including its actuator delay
         targets = policy.step(step, d.xquat[pelvis].copy(), body_gyro(m, d, pelvis), d.qpos[qadr].copy(),
                               d.qvel[dadr].copy(), d.xquat[torso].copy())
         for _ in range(robot.decimation):
-            sim.set_targets(targets[to_native])
+            pending.append(targets[to_native])
+            if len(pending) > lag:
+                hold = pending.pop(0)
+            sim.set_targets(hold)
             sim.step()
         mujoco.mj_forward(m, d)
         out['actions'].append(policy.last_action.copy())
@@ -235,10 +239,10 @@ def evaluate_clip(task: dict) -> dict:
     start = motion['joint_pos'][0] if task.get('start', 'reference') == 'reference' else None
     if task['kind'] == 'supermimic':
         from humanoid_motion.tracking.supermimic.evaluate import play
-        arrays = play(Path(task['policy']), assets / 'g1.xml', clip, names, joint_names, start)
+        arrays = play(Path(task['policy']), assets / 'g1.xml', clip, names, joint_names, start, task.get('delay_ms', 0.))
     else:
         arrays = play_beyondmimic(Path(task['policy']), assets / 'g1.xml', clip, motion, manifest, names, joint_names,
-                                  start)
+                                  start, task.get('delay_ms', 0.))
     start_change = arrays.pop('start_change')
     states = arrays.pop('states')
     offset = frame_offset(ref_pos, ref_quat, states, names, arrays.pop('tracked_bodies'))
@@ -275,7 +279,8 @@ def evaluate_clip(task: dict) -> dict:
                       anchor_criterion=dict(complete=anchor['complete'], first_failure_frame=anchor['first_failure_frame'],
                                             failure_terms=anchor['failure_terms']),
                       sim2sim_frame_offset_m=offset.tolist(), start_pose_max_error_m=start_error,
-                      start=task.get('start', 'reference'), start_joint_change_rad=start_change)
+                      start=task.get('start', 'reference'), start_joint_change_rad=start_change,
+                      actuator_delay_ms=task.get('delay_ms', 0.))
     atomic_json(clip_dir / 'evaluation.json', evaluation)
     return evaluation
 
@@ -327,6 +332,7 @@ def main(argv=None):
     parser.add_argument('--start', choices=('reference', 'morphmimic'), default='reference',
                         help="reference: reference frame 0's joint angles, as the Isaac evaluator (default); "
                         "morphmimic: MorphMimic's eval-env start, joints clipped to the soft limits")
+    parser.add_argument('--delay-ms', type=float, default=0., help='Actuator delay (targets applied this much later)')
     args = parser.parse_args(argv)
     policy = args.deploy if args.policy == 'supermimic' else args.checkpoint
     if policy is None:
@@ -337,7 +343,8 @@ def main(argv=None):
     if args.clips:
         rows = [r for r in rows if r['id'] in set(args.clips)]
     args.output.mkdir(parents=True, exist_ok=False)
-    common = dict(kind=args.policy, start=args.start, policy=str(policy.resolve()), assets=str(args.assets.resolve()),
+    common = dict(kind=args.policy, start=args.start, delay_ms=args.delay_ms, policy=str(policy.resolve()),
+                  assets=str(args.assets.resolve()),
                   output=str(args.output.resolve()), policy_sha256=sha256(weights), library_sha256=sha256(args.library))
     with futures.ProcessPoolExecutor(args.workers, initializer=init_worker,
                                      initargs=(str(args.morphmimic.resolve()),)) as pool:
@@ -347,6 +354,7 @@ def main(argv=None):
         policy_kind=args.policy, policy=str(policy), attempts=len(results),
         completions=sum(r['complete'] for r in results),
         anchor_completions=sum(r['anchor_criterion']['complete'] for r in results), rows=results,
-        perturbation_protocol=f'nominal phase0, start {args.start}; one attempt per clip; MuJoCo CPU sim2sim'))
+        perturbation_protocol=f'nominal phase0, start {args.start}, actuator delay {args.delay_ms:g} ms; one attempt per '
+                              'clip; MuJoCo CPU sim2sim'))
     print(f'{args.output}: {sum(r["complete"] for r in results)}/{len(results)} complete (BeyondMimic criterion), '
           f'{sum(r["anchor_criterion"]["complete"] for r in results)}/{len(results)} (anchor criterion)')

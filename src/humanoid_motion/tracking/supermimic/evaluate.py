@@ -2,7 +2,7 @@
 
 `play` runs one exported clip as their deploy.run plays it (sim_node.SimRobot and policy_node.PolicyRunner in one
 process instead of two linked by ZMQ): no actuator delay, no noise, no randomization, deterministic policy, motion
-interface, simulated to the clip end, from reference frame 0 (see sim2sim.start_state). The evaluation harness, scoring and output files are in
+interface, simulated to the clip end, from reference frame 0 (see sim2sim.start_state); optional actuator delay. The evaluation harness, scoring and output files are in
 humanoid_motion.tracking.sim2sim (command line: scripts/evaluate_mujoco.py --policy supermimic).
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ def tracked_reference(states: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names: list[str],
-         start_joint_pos: np.ndarray | None = None) -> dict:
+         start_joint_pos: np.ndarray | None = None, delay_ms: float = 0.) -> dict:
     """Play one exported clip; return the recorded states (sim world frame) and the clip's reference states."""
     import mujoco
     from deploy.sim2sim.policy_node import ClipReference, PolicyRunner
@@ -51,11 +51,15 @@ def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names
         out['mm_state'].append(mm_state(m, d, sim, robot))
 
     capture()
-    for step in range(len(states) - 1):          # sim_node.run with delay 0: targets held for `decimation` steps
+    lag, pending, hold = round(delay_ms / 1e3 / robot.physics_dt), [], d.qpos[sim.qadr].copy()
+    for step in range(len(states) - 1):          # sim_node.run, including its actuator delay
         quat, gyro, q, dq = sim.measure()
         targets = runner.step(step, quat, gyro, q, dq)
         for _ in range(runner.robot.decimation):
-            sim.set_targets(targets)
+            pending.append(targets)
+            if len(pending) > lag:
+                hold = pending.pop(0)
+            sim.set_targets(hold)
             sim.step()
         mujoco.mj_forward(m, d)
         out['actions'].append(runner.last_action.copy())
