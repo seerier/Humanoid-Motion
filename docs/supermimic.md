@@ -10,7 +10,7 @@ What this repository adds around it (`src/humanoid_motion/tracking/supermimic/`)
 
 ## Switch list
 
-Training uses MorphMimic's command-line flags only. A first LAFAN1 run set every switch for which the paper gives a value to the paper's value (column "Run 1") and kept MorphMimic's defaults for the paper's gaps. It diverged near iteration 3,000: the critic loss rose about fiftyfold within 100 iterations, the value estimate approached its upper bound (10) and the episode length and return fell; it had no checkpoint from before the divergence. The policy reported here (column "Run 2") is trained with MorphMimic's own defaults throughout, the recipe behind its released policies, rather than a mix of the two.
+Training uses MorphMimic's command-line flags only. A first LAFAN1 run set every switch for which the paper gives a value to the paper's value (column "Run 1") and kept MorphMimic's defaults for the paper's gaps. It diverged near iteration 3,000: the critic loss rose from 0.026 at iteration 2,750 to 7.5 at 3,200, the critic's mean value at the start of imagined rollouts rose from 6.7 to 14.6, past the largest possible return (10), and the episode length and return fell; the run was stopped there and had no checkpoint from before the divergence. The policy reported here (column "Run 2") is trained with MorphMimic's own defaults throughout, rather than a mix of the two.
 
 | Item | Paper | MorphMimic default | Run 1 (diverged) | Run 2 (reported) | Flag for the paper value |
 |---|---|---|---|---|---|
@@ -32,9 +32,9 @@ Not switchable, kept as MorphMimic implements them: position-free goals (the goa
 
 ## Training on LAFAN1
 
-The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. With 4,096 environments one NVIDIA A40 runs about 0.86 iterations per second with the paper's TF32 setting (run 1) and 1.41 with MorphMimic's bfloat16 default (run 2). Run 2 was stopped by a scheduler preemption after 6.4 h of wall clock including kernel compilation (about 25,000 iterations); its last checkpoint, iteration 24,000, is the reported policy. Every 2,000th to 4,000th checkpoint was evaluated on the test split (learning curve in the README); the reported one was not selected on it.
+The LAFAN1 train split (1,062 six-second clips, 1.76 h) is the one the released BeyondMimic policy was trained on. Both runs used 4,096 environments on one NVIDIA A40. The trainer logged about 0.86 iterations per second for run 1 (TF32, on a node whose driver disabled CUDA graphs) and 1.41 for run 2 (bfloat16, on another node); the two rates are not a clean precision comparison. Over run 2 as a whole, wall clock including compilation, checkpointing and the trainer's other overhead came to about 1.05 iterations per second. A scheduler preemption stopped run 2 6.7 h after it started, near iteration 25,200; its last checkpoint, iteration 24,000 at 6.4 h, is the reported policy. Every 2,000th to 4,000th checkpoint was evaluated on the test split (learning curve in the README); the reported one was not selected on it.
 
-The training log's `nret` is not a performance measure here: it divides each finished episode's return by that episode's length, and MorphMimic's return-based reset sampling starts more episodes at the reference segments with low returns, so the episodes it averages over shift toward hard segments. In run 2 it fell from 0.47 to about 0.28 over the first 8,000 iterations while the test-set completions rose from 166 to 190 and the normalised return from 0.61 to 0.76.
+The training log's `nret` is not a performance measure here: it divides each finished episode's return by that episode's length, and MorphMimic's return-based reset sampling starts more episodes at the reference segments with low returns, so the episodes it averages over shift toward hard segments. In run 2 it peaked at 0.47 near iteration 1,800 and fell to about 0.28 by iteration 8,000, while between checkpoints 2,000 and 8,000 the test-set completions rose from 166 to 190 and the normalised return from 0.61 to 0.76.
 
 ## Comparison protocol
 
