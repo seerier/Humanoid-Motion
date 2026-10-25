@@ -82,7 +82,9 @@ def build_model():
     model.light_dir[0], model.light_dir[1] = KEY_DIR / np.linalg.norm(KEY_DIR), FILL_DIR / np.linalg.norm(FILL_DIR)
     model.vis.quality.offsamples = 8
     model.vis.quality.shadowsize = 8192
-    model.vis.map.shadowclip = 4.0                                        # shadow map covers 4 m around the key light
+    # Half-width of the key light's shadow box, in model extents (read when a rendering context is created). Its edge
+    # must lie beyond the visible floor: some OpenGL drivers (NVIDIA EGL) shade samples outside it as speckles.
+    model.vis.map.shadowclip = 30.0
     model.vis.headlight.ambient[:] = 0.26
     model.vis.headlight.diffuse[:] = 0.08
     model.vis.headlight.specular[:] = 0.0
