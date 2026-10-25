@@ -21,14 +21,17 @@ from humanoid_motion.evaluation import CRITERIA, score_attempt
 from humanoid_motion.library import atomic_json
 
 
-def score_directory(library: Path, evaluation: Path, criterion: str, full: bool = False) -> dict:
-    """Score every clip of the library that has a rollout; `full` uses rollout_full.npz (recorded past failures)."""
+def score_directory(library: Path, evaluation: Path, criterion: str, full: bool = False,
+                    allow_missing: bool = False) -> dict:
+    """Score every clip of the library; `full` uses rollout_full.npz (recorded past failures). A clip without a
+    recording is an error unless `allow_missing` (then it is listed in the output and left out of the counts)."""
     manifest = json.loads(library.read_text())
-    rows = []
+    rows, missing = [], []
     for row in manifest['clips']:
         clip_dir = evaluation / row['id']
         path = clip_dir / ('rollout_full.npz' if full else 'rollout.npz')
         if not path.exists():
+            missing.append(row['id'])
             continue
         motion = ROOT / row['motion']
         names = json.loads(motion.with_suffix('.manifest.json').read_text())['body_names']
@@ -44,9 +47,13 @@ def score_directory(library: Path, evaluation: Path, criterion: str, full: bool 
                                    rollout['body_pos_w'].astype(np.float64),
                                    rollout['body_quat_w'].astype(np.float64), names, criterion)
         rows.append(dict(clip_id=row['id'], category=row['category'], split=row['split'], **result))
+    if missing and not allow_missing:
+        raise FileNotFoundError(f'{len(missing)} of {len(manifest["clips"])} clips have no recording in {evaluation} '
+                                f'(e.g. {missing[0]}); a summary-only or perturbation run, or rollout_full.npz of an '
+                                'Isaac run? Pass --allow-missing to score the rest')
     return dict(schema='humanoid_motion.offline_scores.v1', criterion=criterion, library=str(library),
                 evaluation=str(evaluation), recording='rollout_full.npz' if full else 'rollout.npz',
-                attempts=len(rows), completions=sum(r['complete'] for r in rows), rows=rows)
+                attempts=len(rows), completions=sum(r['complete'] for r in rows), missing=missing, rows=rows)
 
 
 def check(scores: dict, evaluation: Path) -> dict:
@@ -69,9 +76,11 @@ def main():
     parser.add_argument('--evaluation', type=Path, required=True, help='Directory with <clip>/rollout.npz')
     parser.add_argument('--criterion', choices=sorted(CRITERIA), default='beyondmimic')
     parser.add_argument('--full', action='store_true', help='Score rollout_full.npz (recorded past the first failure)')
-    parser.add_argument('--check', action='store_true', help='Compare with the online results.json')
+    parser.add_argument('--check', action='store_true', help='Compare with the online results.json of a nominal run '
+                        '(a --continue-after-failure run reports metrics over the whole clip, not the scored prefix)')
+    parser.add_argument('--allow-missing', action='store_true', help='Score the clips that have a recording')
     args = parser.parse_args()
-    scores = score_directory(args.library, args.evaluation, args.criterion, args.full)
+    scores = score_directory(args.library, args.evaluation, args.criterion, args.full, args.allow_missing)
     if args.check:
         scores['online_check'] = check(scores, args.evaluation)
     out = args.evaluation / f'scores_{args.criterion}{"_full" if args.full else ""}.json'

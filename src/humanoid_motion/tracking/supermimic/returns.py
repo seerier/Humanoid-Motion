@@ -67,6 +67,8 @@ def main():
                    definition=__doc__.split('\n\n')[0], soft_joint_limit_factor=factor, clips=len(rows),
                    mean_normalised_return=float(values.mean()) if len(values) else None, rows=rows)
     atomic_json(args.evaluation / 'returns.json', summary)
+    if not rows:
+        raise SystemExit(f'{args.evaluation}: no rollout_full.npz with MorphMimic states')
     print(f'{args.evaluation}: mean normalised return {summary["mean_normalised_return"]:.3f} over {len(rows)} clips')
 
 

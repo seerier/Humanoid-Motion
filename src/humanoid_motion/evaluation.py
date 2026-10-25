@@ -91,8 +91,8 @@ def score_attempt(reference_pos: np.ndarray, reference_quat: np.ndarray, actual_
     `actual_*` may be shorter than the reference (a recording that already stopped) or run to the clip end.
     """
     n, expected = len(actual_pos), len(reference_pos)
-    if n < 1 or n > expected:
-        raise ValueError('Recording must be a nonempty prefix of the reference')
+    if expected < 2 or n < 1 or n > expected:
+        raise ValueError('Recording must be a nonempty prefix of a reference with at least 2 frames')
     terms = failure_terms(reference_pos[:n], reference_quat[:n], actual_pos, actual_quat, body_names)
     bad = np.zeros(n, dtype=bool)
     for key in CRITERIA[criterion]:

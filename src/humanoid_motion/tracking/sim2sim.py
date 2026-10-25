@@ -112,6 +112,25 @@ class BeyondMimicPolicy:
         return self.default + self.scale * action
 
 
+def start_state(sim, clip_ref, joint_names: list[str], start_joint_pos: np.ndarray | None):
+    """Initial (qpos, qvel): MorphMimic's eval-env start of the clip (root pose and all velocities), with the joint
+    angles replaced by `start_joint_pos` (reference frame 0, library joint order) unless it is None. Their reset clips
+    joint angles to the soft limits; the Isaac evaluator starts from the unclipped reference, which this restores.
+    Also returns the largest joint-angle change (rad)."""
+    import mujoco
+    qpos, qvel = np.array(clip_ref['init_qpos'], np.float64), np.array(clip_ref['init_qvel'], np.float64)
+    if start_joint_pos is None:
+        return qpos, qvel, 0.
+    m = sim.model
+    ids = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, 'robot/' + n) for n in joint_names]
+    if min(ids) < 0:
+        raise ValueError('scene is missing library joints')
+    adr = m.jnt_qposadr[ids]
+    change = float(np.abs(qpos[adr] - start_joint_pos).max())
+    qpos[adr] = start_joint_pos
+    return qpos, qvel, change
+
+
 def mm_state(m, d, sim, robot) -> np.ndarray:
     """MorphMimic's world-model state [240] of the simulated robot: canonical q, qd, then position, wxyz quaternion,
     link-origin linear and angular velocity (world axes) of its 14 tracked bodies; their reward head reads it."""
@@ -124,7 +143,7 @@ def mm_state(m, d, sim, robot) -> np.ndarray:
 
 
 def play_beyondmimic(checkpoint: Path, xml: Path, clip: Path, motion: dict, manifest: dict, body_names: list[str],
-                     joint_names: list[str]) -> dict:
+                     joint_names: list[str], start_joint_pos: np.ndarray | None = None) -> dict:
     """Play one clip with the BeyondMimic policy in MuJoCo; same recording as supermimic.evaluate.play."""
     import mujoco
     from deploy.sim2sim.obs import Robot
@@ -132,7 +151,8 @@ def play_beyondmimic(checkpoint: Path, xml: Path, clip: Path, motion: dict, mani
     ref = np.load(clip)
     robot = Robot.load('g1')                       # MorphMimic's baked G1 constants (joint order, timing)
     sim = SimRobot(xml, robot)
-    sim.reset(ref['init_qpos'], ref['init_qvel'])
+    qpos, qvel, start_change = start_state(sim, ref, joint_names, start_joint_pos)
+    sim.reset(qpos, qvel)
     m, d = sim.model, sim.data
     prefix = 'robot/'
     bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, prefix + n) for n in body_names]
@@ -168,6 +188,7 @@ def play_beyondmimic(checkpoint: Path, xml: Path, clip: Path, motion: dict, mani
     arrays = {k: np.asarray(v) for k, v in out.items()}
     arrays['states'] = ref['states'].astype(np.float64)
     arrays['tracked_bodies'] = list(robot.tracked_bodies)
+    arrays['start_change'] = start_change
     return arrays
 
 
@@ -211,11 +232,14 @@ def evaluate_clip(task: dict) -> dict:
         motion = {k: z[k].astype(np.float64) for k in ('body_pos_w', 'body_quat_w', 'joint_pos', 'joint_vel')}
     ref_pos, ref_quat = motion['body_pos_w'], motion['body_quat_w']
     clip = assets / 'clips' / 'g1' / f'{row["id"]}.npz'
+    start = motion['joint_pos'][0] if task.get('start', 'reference') == 'reference' else None
     if task['kind'] == 'supermimic':
         from humanoid_motion.tracking.supermimic.evaluate import play
-        arrays = play(Path(task['policy']), assets / 'g1.xml', clip, names, joint_names)
+        arrays = play(Path(task['policy']), assets / 'g1.xml', clip, names, joint_names, start)
     else:
-        arrays = play_beyondmimic(Path(task['policy']), assets / 'g1.xml', clip, motion, manifest, names, joint_names)
+        arrays = play_beyondmimic(Path(task['policy']), assets / 'g1.xml', clip, motion, manifest, names, joint_names,
+                                  start)
+    start_change = arrays.pop('start_change')
     states = arrays.pop('states')
     offset = frame_offset(ref_pos, ref_quat, states, names, arrays.pop('tracked_bodies'))
     extra = {'mm_state': arrays.pop('mm_state'), 'mm_reference': states} if 'mm_state' in arrays else {}
@@ -250,7 +274,8 @@ def evaluate_clip(task: dict) -> dict:
                       metrics_on_observed_prefix=result['metrics_on_observed_prefix'],
                       anchor_criterion=dict(complete=anchor['complete'], first_failure_frame=anchor['first_failure_frame'],
                                             failure_terms=anchor['failure_terms']),
-                      sim2sim_frame_offset_m=offset.tolist(), start_pose_max_error_m=start_error)
+                      sim2sim_frame_offset_m=offset.tolist(), start_pose_max_error_m=start_error,
+                      start=task.get('start', 'reference'), start_joint_change_rad=start_change)
     atomic_json(clip_dir / 'evaluation.json', evaluation)
     return evaluation
 
@@ -299,6 +324,9 @@ def main(argv=None):
     parser.add_argument('--workers', type=int, default=os.cpu_count())
     parser.add_argument('--morphmimic', type=Path, default=ROOT / 'third_party/morphmimic')
     parser.add_argument('--label', default='', help='Free text stored in results.json')
+    parser.add_argument('--start', choices=('reference', 'morphmimic'), default='reference',
+                        help="reference: reference frame 0's joint angles, as the Isaac evaluator (default); "
+                        "morphmimic: MorphMimic's eval-env start, joints clipped to the soft limits")
     args = parser.parse_args(argv)
     policy = args.deploy if args.policy == 'supermimic' else args.checkpoint
     if policy is None:
@@ -309,7 +337,7 @@ def main(argv=None):
     if args.clips:
         rows = [r for r in rows if r['id'] in set(args.clips)]
     args.output.mkdir(parents=True, exist_ok=False)
-    common = dict(kind=args.policy, policy=str(policy.resolve()), assets=str(args.assets.resolve()),
+    common = dict(kind=args.policy, start=args.start, policy=str(policy.resolve()), assets=str(args.assets.resolve()),
                   output=str(args.output.resolve()), policy_sha256=sha256(weights), library_sha256=sha256(args.library))
     with futures.ProcessPoolExecutor(args.workers, initializer=init_worker,
                                      initargs=(str(args.morphmimic.resolve()),)) as pool:
@@ -319,6 +347,6 @@ def main(argv=None):
         policy_kind=args.policy, policy=str(policy), attempts=len(results),
         completions=sum(r['complete'] for r in results),
         anchor_completions=sum(r['anchor_criterion']['complete'] for r in results), rows=results,
-        perturbation_protocol='nominal phase0; one attempt per clip; MuJoCo CPU sim2sim'))
+        perturbation_protocol=f'nominal phase0, start {args.start}; one attempt per clip; MuJoCo CPU sim2sim'))
     print(f'{args.output}: {sum(r["complete"] for r in results)}/{len(results)} complete (BeyondMimic criterion), '
           f'{sum(r["anchor_criterion"]["complete"] for r in results)}/{len(results)} (anchor criterion)')

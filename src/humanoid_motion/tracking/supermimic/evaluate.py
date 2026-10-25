@@ -2,7 +2,7 @@
 
 `play` runs one exported clip as their deploy.run plays it (sim_node.SimRobot and policy_node.PolicyRunner in one
 process instead of two linked by ZMQ): no actuator delay, no noise, no randomization, deterministic policy, motion
-interface, simulated to the clip end. The evaluation harness, scoring and output files are in
+interface, simulated to the clip end, from reference frame 0 (see sim2sim.start_state). The evaluation harness, scoring and output files are in
 humanoid_motion.tracking.sim2sim (command line: scripts/evaluate_mujoco.py --policy supermimic).
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from humanoid_motion.tracking.sim2sim import mm_state
+from humanoid_motion.tracking.sim2sim import mm_state, start_state
 
 
 PREFIX = 'robot/'
@@ -22,7 +22,8 @@ def tracked_reference(states: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return states[:, 58:100].reshape(-1, 14, 3), states[:, 100:156].reshape(-1, 14, 4)
 
 
-def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names: list[str]) -> dict:
+def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names: list[str],
+         start_joint_pos: np.ndarray | None = None) -> dict:
     """Play one exported clip; return the recorded states (sim world frame) and the clip's reference states."""
     import mujoco
     from deploy.sim2sim.policy_node import ClipReference, PolicyRunner
@@ -31,7 +32,8 @@ def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names
     states = ref['states'].astype(np.float64)
     runner = PolicyRunner(deploy, 'g1', ClipReference(states), 'motion')
     sim = SimRobot(xml, runner.robot)
-    sim.reset(ref['init_qpos'], ref['init_qvel'])
+    qpos, qvel, start_change = start_state(sim, ref, joint_names, start_joint_pos)
+    sim.reset(qpos, qvel)
     m, d = sim.model, sim.data
     bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, PREFIX + n) for n in body_names]
     joints = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, PREFIX + n) for n in joint_names]
@@ -61,4 +63,5 @@ def play(deploy: Path, xml: Path, clip: Path, body_names: list[str], joint_names
     arrays = {k: np.asarray(v) for k, v in out.items()}
     arrays['states'] = states
     arrays['tracked_bodies'] = list(robot.tracked_bodies)
+    arrays['start_change'] = start_change
     return arrays
