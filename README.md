@@ -219,9 +219,10 @@ PYTHONPATH=src $MM scripts/evaluate_mujoco.py --policy beyondmimic --checkpoint 
    --compare BeyondMimic=outputs/eval/test SuperMimic=outputs/eval/supermimic_test --clips dance2_subject2_f3720_3900
 ```
 
-## Pretrained policy
+## Pretrained policies
 
-The v0.1 checkpoint is attached to the [v0.1 release](https://github.com/seerier/Humanoid-Motion/releases) as `humanoid_motion_g1_v0.1.pt` (SHA256 `9e4fe7cf8857f3b676a3883b59c29c5891c1d93ccd25cf4575de99bb2aab863f`). Pass it to `scripts/evaluate.py --checkpoint`.
+- BeyondMimic: the v0.1 checkpoint is attached to the [v0.1 release](https://github.com/seerier/Humanoid-Motion/releases/tag/v0.1) as `humanoid_motion_g1_v0.1.pt` (SHA256 `9e4fe7cf8857f3b676a3883b59c29c5891c1d93ccd25cf4575de99bb2aab863f`). Pass it to `scripts/evaluate.py --checkpoint` (Isaac Lab) or `scripts/evaluate_mujoco.py --policy beyondmimic --checkpoint`.
+- SuperMimic (unofficial reimplementation, trained here): the iteration-24,000 export is attached to the [v0.3 release](https://github.com/seerier/Humanoid-Motion/releases/tag/v0.3) as `supermimic_lafan1_24000.zip` (`policy.onnx`, SHA256 `ae6e1849e6b5bdede0bb025a40a918739c5d66bba72e357a597e161512f7312e`, and `g1.json`). Unzip it and pass the folder to `scripts/evaluate_mujoco.py --policy supermimic --deploy`.
 
 ## Repository layout
 
@@ -255,7 +256,7 @@ The two stages exchange only reference motion files, so either backend can be re
 
 ## License and data
 
-The code is MIT-licensed. LAFAN1 is CC BY-NC-ND 4.0, so the released checkpoint and videos are for non-commercial research use, with attribution to Ubisoft La Forge. GVHMR and the SMPL-X model are for non-commercial research only and are not redistributed. Upstream components keep their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
+The code is MIT-licensed. LAFAN1 is CC BY-NC-ND 4.0, so the released policies and videos are for non-commercial research use, with attribution to Ubisoft La Forge. GVHMR and the SMPL-X model are for non-commercial research only and are not redistributed. Upstream components keep their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Acknowledgements
 

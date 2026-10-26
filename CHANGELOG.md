@@ -1,15 +1,16 @@
 # Changelog
 
-## v0.3 (unreleased)
+## v0.3
 
 A video front end, a second tracking backend, and one evaluation protocol for both. The v0.1 policy is unchanged.
 
 - Video front end: monocular video -> GVHMR -> SMPL-X -> GMR -> G1 reference in the same contract as LAFAN1 clips (`scripts/video_to_reference.py`, `humanoid_motion.video`, `scripts/setup_gvhmr.sh`, `docs/video.md`). The ground comes from GVHMR's own stationary-foot labels, frame by frame; a quality gate and a stage-by-stage audit (reconstruction, interface, retargeting, ground, tracking) say which stage a bad clip fails in. LAFAN1 retargeting output is byte-identical to v0.2.
-- SuperMimic backend through MorphMimic's unofficial reimplementation in single-robot mode, unmodified (`humanoid_motion.tracking.supermimic`, `scripts/setup_supermimic.sh`, `docs/supermimic.md`): motion-library conversion from the same 50 Hz frames as the Isaac library with a URDF FK check, training with MorphMimic's flags, an exporter adapter for motion-only checkpoints, and SuperMimic's normalised return.
+- SuperMimic backend through MorphMimic's unofficial reimplementation in single-robot mode, unmodified (`humanoid_motion.tracking.supermimic`, `scripts/setup_supermimic.sh`, `docs/supermimic.md`): motion-library conversion from the same 50 Hz frames as the Isaac library with a URDF FK check, training with MorphMimic's flags, an exporter adapter for motion-only checkpoints, and SuperMimic's normalised return. MorphMimic is pinned at 2e35049, which has the same code as 8cd92b6, the commit the policy was trained and evaluated at (a later upstream force push removed 8cd92b6 from its main branch).
 - One offline scorer for every backend (`humanoid_motion.evaluation.score_attempt`, `scripts/score_rollouts.py`), with the BeyondMimic and the SuperMimic failure criteria. It reproduces the online Isaac evaluator exactly: 190 / 230, the same first failure frame on every clip.
 - MuJoCo evaluation for both backends (`scripts/evaluate_mujoco.py`, `humanoid_motion.tracking.sim2sim`). The v0.1 BeyondMimic policy runs in MuJoCo too: 190 / 230 there, as in Isaac Lab, with the same verdict on 226 clips; every attempt in both simulators starts from the reference's first frame.
 - `scripts/render_video.py`: `compare` (one column per policy) and `video` (source video, retargeted reference, policies) layouts.
 - Results on the 230 LAFAN1 test clips, one scorer: a SuperMimic policy trained here on the same LAFAN1 train split (MorphMimic's defaults, last checkpoint after 6.4 h on one A40) completes 195 against 190 for the v0.1 BeyondMimic policy (22 h), 224 against 216 under SuperMimic's torso-only criterion, with lower pose and drift errors. With 20 ms of actuator delay the BeyondMimic policy drops to 161 and the SuperMimic policy to 193. MorphMimic's cross-embodiment `unified_v2` policy is evaluated zero-shot as a reference in `docs/supermimic.md` (198), not in the main comparison. A first SuperMimic run with the paper's switch values diverged near iteration 3,000.
+- Release asset: the SuperMimic policy trained here (`supermimic_lafan1_24000.zip`: MorphMimic's `policy.onnx` and `g1.json`), for `scripts/evaluate_mujoco.py --policy supermimic --deploy`.
 - `render_video.py` shadow box widened so that NVIDIA EGL renders no speckles on the far floor; `--delay-ms` in the MuJoCo evaluation.
 
 ## v0.2
