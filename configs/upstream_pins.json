@@ -276,9 +276,9 @@
     }
   },
   "MorphMimic": {
-    "_note": "Optional SuperMimic backend (docs/supermimic.md): open SuperMimic implementation, used unmodified; installed by scripts/setup_supermimic.sh with its own uv.lock.",
+    "_note": "Optional SuperMimic backend (docs/supermimic.md): open SuperMimic implementation, used unmodified; installed by scripts/setup_supermimic.sh with its own uv.lock. The v0.3 policy was trained and evaluated at 8cd92b6498ac693a7553723dfdf37aaa87e01ab3, which a force push on 2026-10-26 removed from upstream main; the pinned commit has the same tree except README.md.",
     "url": "https://github.com/lzyang2000/morphmimic.git",
-    "commit": "8cd92b6498ac693a7553723dfdf37aaa87e01ab3",
+    "commit": "2e35049e9519e511889ef987e4acde55d4f5b017",
     "license": "Apache-2.0"
   }
 }

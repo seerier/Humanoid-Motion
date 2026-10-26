@@ -14,6 +14,10 @@ if [[ "${1:-}" != --check ]]; then
   command -v uv >/dev/null || { echo 'Install uv first (https://docs.astral.sh/uv/)' >&2; exit 1; }
   if [[ ! -d $dir/.git ]]; then
     git clone "$(pin MorphMimic url)" "$dir"          # no --recursive: its submodules are only for teleop and hardware
+  fi
+  if [[ "$(git -C "$dir" rev-parse HEAD)" != "$commit" && -z "$(git -C "$dir" status --porcelain --untracked-files=no)" ]]; then
+    # a commit that upstream history no longer reaches is not in a fresh clone; fetch it by its SHA
+    git -C "$dir" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$dir" fetch origin "$commit"
     git -C "$dir" checkout --detach "$commit"
   fi
   (cd "$dir" && for i in 1 2 3; do UV_HTTP_TIMEOUT=300 uv sync --frozen --no-dev --group export && break; sleep 20; done)
