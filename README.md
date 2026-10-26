@@ -202,9 +202,14 @@ PYTHONPATH=src $MM -m humanoid_motion.tracking.supermimic.export outputs/supermi
 
 This is the reported run, on MorphMimic's defaults; the switch flags that set the paper's values instead are listed in [docs/supermimic.md](docs/supermimic.md).
 
-Evaluate either backend in MuJoCo, score with one function, and render side by side (the MuJoCo scene and clips come from MorphMimic's `deploy.sim2sim.export_assets`):
+Evaluate either backend in MuJoCo, score with one function, and render side by side. The MuJoCo scene and clips come from MorphMimic's `deploy.sim2sim.export_assets` (GPU):
 
 ```bash
+PYTHONPATH=src $MM -m humanoid_motion.tracking.supermimic.library --split outputs/lafan1/test.json --out outputs/supermimic/library/test
+yaml=$PWD/outputs/supermimic/library/test/subsets/test.yaml assets=$PWD/outputs/supermimic/assets/test
+clips=$($MM -c "import pathlib, sys, yaml; print(' '.join(pathlib.Path(p).stem for p in yaml.safe_load(open(sys.argv[1]))['clips']))" "$yaml")
+(cd third_party/morphmimic && MUJOCO_GL=egl .venv/bin/python -m deploy.sim2sim.export_assets --robot g1 --gpu 0 \
+   --subset-yaml "$yaml" --clips $clips --out "$assets")
 PYTHONPATH=src $MM scripts/evaluate_mujoco.py --policy supermimic --deploy outputs/supermimic/export/lafan1 --assets outputs/supermimic/assets/test \
    --library outputs/lafan1/runtime/test.json --output outputs/eval/supermimic_test
 PYTHONPATH=src $MM scripts/evaluate_mujoco.py --policy beyondmimic --checkpoint humanoid_motion_g1_v0.1.pt --assets outputs/supermimic/assets/test \
