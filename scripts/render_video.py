@@ -16,6 +16,13 @@ offscreen renderer; nothing is re-simulated.
     # video clips: source video | retargeted G1 reference | one column per policy; --seconds 0 plays the whole clip
     python scripts/render_video.py video --library outputs/video/runtime/video_sf.json --compare C=outputs/eval/c_video \
         --clips squat_sf --source-video squat_sf=data/video/squat.mp4 --seconds 0 --fps 30
+    # two columns, source video | policy, with a portrait source panel
+    python scripts/render_video.py video ... --no-reference --source-label 'Human video' --source-width 338 \
+        --width 450 --height 600
+    # the robot seen from the camera that filmed the video, placed in the frame where the person is (python -m
+    # humanoid_motion.video.camera writes camera.json); give both panels the video's aspect ratio
+    python scripts/render_video.py video ... --camera video --source-camera squat_sf=outputs/video/squat_sf/camera.json \
+        --source-width 316 --width 316 --height 600
 
 Look: the G1 in its own two-tone materials on a light checker floor (the squares show travel and speed while the
 camera follows the robot), a key light with shadows that follows the camera target, a soft fill light and 8x
@@ -211,6 +218,21 @@ def turn_with(root_quat: np.ndarray, fps: float, side: float = -35., max_turn: f
     for i in range(1, len(target)):
         azimuth[i] = azimuth[i - 1] + np.clip((target[i] - azimuth[i - 1] + 180.) % 360. - 180., -step, step)
     return azimuth
+
+
+def video_view(camera: dict, times: np.ndarray, pelvis: np.ndarray, fps: float) -> View:
+    """View from the camera that filmed a video clip (humanoid_motion.video.camera): its orientation and lens, at a
+    position that puts the pelvis (T, 3), at times (T,) s, where the person's pelvis is in the video (scaled to the
+    robot), smoothed over 1 s; the floor shows the drift. MuJoCo's free camera sits at lookat - distance * forward,
+    forward = (cos el cos az, cos el sin az, sin el), with no roll."""
+    forward, up = (np.asarray(camera[key], np.float64) for key in ('forward', 'up'))
+    axes = np.stack([np.cross(forward, up), -up, forward], axis=1)       # columns: camera x right, y down, z forward
+    human = camera['scale'] * np.asarray(camera['human_pelvis_in_camera_m'], np.float64)
+    at = np.stack([np.interp(times, np.arange(len(human)) / camera['fps'], human[:, a]) for a in range(3)], axis=1)
+    distance = float(np.median(at[:, 2]))
+    position = smooth(pelvis - at @ axes.T, fps, 1.0)
+    return View(position + distance * forward, np.degrees(np.arctan2(forward[1], forward[0])), distance,
+                np.degrees(np.arcsin(forward[2])))
 
 
 def make_view(camera: str, points: np.ndarray, root_quat: np.ndarray, fps: float, follow_mode: str = 'average',
@@ -479,14 +501,18 @@ def video_frames(path: Path, w: int, h: int) -> np.ndarray:
 
 
 def render_video_rows(args) -> None:
-    """Rows = video clips; columns = the source video, the retargeted G1 reference, then one column per --compare
-    evaluation. The source video (--source-fps, first frame = reference frame 0) sets the time axis."""
-    sources = {}
-    for entry in args.source_video or []:
-        clip, separator, path = entry.partition('=')
-        if not separator:
-            raise ValueError('--source-video entries are CLIP=VIDEO_FILE')
-        sources[clip] = Path(path)
+    """Rows = video clips; columns = the source video, the retargeted G1 reference (unless --no-reference), then one
+    column per --compare evaluation. The source video (--source-fps, first frame = reference frame 0) sets the time
+    axis; its panel is --source-width wide (default --width). --camera video views every robot panel from the camera
+    that filmed the clip (--source-camera)."""
+    sources, cameras = {}, {}
+    for entries, table, what in ((args.source_video, sources, 'VIDEO_FILE'), (args.source_camera, cameras, 'CAMERA_JSON')):
+        for entry in entries or []:
+            clip, separator, path = entry.partition('=')
+            if not separator:
+                raise ValueError(f'--source-video / --source-camera entries are CLIP={what}')
+            table[clip] = Path(path)
+    video_camera = args.camera == 'video'
     columns = [(label, Path(folder)) for label, _, folder in (e.partition('=') for e in args.compare)]
     rows, durations = [], []
     for n, clip in enumerate(args.clips):
@@ -494,16 +520,20 @@ def render_video_rows(args) -> None:
         _, reference, manifest, _ = load_clip(args.library, columns[0][1], clip)
         rfps = float(reference['fps'].item())
         durations.append((len(reference['joint_pos']) - 1) / rfps)
-        frames = video_frames(sources[clip], args.width, args.height)
+        frames = video_frames(sources[clip], args.source_width or args.width, args.height)
+        camera = json.loads(cameras[clip].read_text()) if video_camera else None
+        fovy = camera['fovy_deg'] if video_camera else lens(args.camera)
 
         def source(t, frames=frames, top=top):
             img = frames[min(int(round(t * args.source_fps)), len(frames) - 1)].copy()
-            return caption(img, 'Source video') if top else img
-        rstage = Stage(args.width, args.height, lens(args.camera))
+            return caption(img, args.source_label) if top else img
+        rstage = Stage(args.width, args.height, fovy)
         rdata = mujoco.MjData(rstage.m)
         root = manifest['body_names'].index('pelvis')
         qadr, qsrc = joint_index(rstage.m, manifest['joint_names'])
-        rview = make_view(args.camera, reference['body_pos_w'], reference['body_quat_w'][:, root], rfps, args.follow, args.orbit)
+        rview = video_view(camera, np.arange(len(reference['joint_pos'])) / rfps, reference['body_pos_w'][:, root], rfps) \
+            if video_camera else \
+            make_view(args.camera, reference['body_pos_w'], reference['body_quat_w'][:, root], rfps, args.follow, args.orbit)
 
         def kinematic(t, rstage=rstage, rdata=rdata, ref=reference, root=root, qadr=qadr, qsrc=qsrc, rfps=rfps,
                       rview=rview, top=top):
@@ -511,11 +541,13 @@ def render_video_rows(args) -> None:
             pose(rstage.m, rdata, qadr, qsrc, ref['body_pos_w'][r, root], ref['body_quat_w'][r, root], ref['joint_pos'][r])
             img = rstage.shoot(rdata, rview, r)
             return caption(img, PIPELINE_LABELS[1]) if top else img
-        row = [source, kinematic]
+        row = [source] if args.no_reference else [source, kinematic]
         for label, folder in columns:
             _, _, _, clip_dir = load_clip(args.library, folder, clip)
-            run = TrackedRun(Stage(args.width, args.height, lens(args.camera)), clip_dir, reference, manifest,
+            run = TrackedRun(Stage(args.width, args.height, fovy), clip_dir, reference, manifest,
                              args.camera, args.follow, args.orbit, args.blur)
+            if video_camera:                                              # follows the executed pelvis
+                run.view = video_view(camera, run.idx / rfps, run.d['body_pos_w'][:, root], rfps)
             run.show_ghost, run.label = args.ghost, label
             print(clip, label, 'complete' if run.complete else f'fails at step {run.fail}')
             row.append(run.frame)
@@ -533,12 +565,18 @@ def main() -> None:
     parser.add_argument('--compare', nargs='+', metavar='LABEL=DIR', help='compare, video layouts: one evaluation per column')
     parser.add_argument('--source-video', nargs='+', metavar='CLIP=FILE', help='video layout: the source video of each clip')
     parser.add_argument('--source-fps', type=float, default=30., help='video layout: frame rate of the source videos')
+    parser.add_argument('--source-label', default='Source video', help='video layout: label of the source video column')
+    parser.add_argument('--source-width', type=int, help='video layout: width of the source video panel (default --width)')
+    parser.add_argument('--no-reference', action='store_true', help='video layout: leave out the retargeted reference column')
     parser.add_argument('--clips', nargs='+', required=True)
     parser.add_argument('--labels', nargs='+', help='grid layout: one panel label per clip (default: motion category; "" for none)')
     parser.add_argument('--ghost', action='store_true', help='grid layout: also draw the reference as a translucent grey copy (analysis only; leave off for demos)')
     parser.add_argument('--cols', type=int, default=3, help='grid layout: panels per row')
-    parser.add_argument('--camera', choices=['cinematic', 'fixed'], default='cinematic',
-                        help='cinematic: turns with the body, long lens, framed on its size; fixed: one world view')
+    parser.add_argument('--camera', choices=['cinematic', 'fixed', 'video'], default='cinematic',
+                        help='cinematic: turns with the body, long lens, framed on its size; fixed: one world view; '
+                             'video (video layout): the camera that filmed the clip, from --source-camera')
+    parser.add_argument('--source-camera', nargs='+', metavar='CLIP=FILE',
+                        help='video layout, --camera video: camera.json of each clip (python -m humanoid_motion.video.camera)')
     parser.add_argument('--follow', choices=['average', 'spring'], default='average',
                         help='camera target: centred moving average, or a critically damped spring that lags like an operator')
     parser.add_argument('--orbit', type=float, default=8., help='cinematic camera: swing of +-degrees over the clip (0 for none)')
@@ -557,6 +595,8 @@ def main() -> None:
     multi = args.layout in ('compare', 'video')
     if multi != (args.evaluation is None) or multi != bool(args.compare):
         parser.error('grid and pipeline take --evaluation; compare and video take --compare')
+    if args.camera == 'video' and (args.layout != 'video' or not args.source_camera):
+        parser.error('--camera video needs the video layout and --source-camera')
     {'grid': render_grid, 'pipeline': render_pipeline, 'compare': render_compare, 'video': render_video_rows}[args.layout](args)
 
 

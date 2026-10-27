@@ -42,11 +42,13 @@ What the numbers say, and what they do not:
 
 A monocular video goes through [GVHMR](https://github.com/zju3dv/GVHMR) (world-grounded SMPL-X human motion), a per-frame ground fix from GVHMR's own stationary-foot labels, and GMR, into a reference in the same format as the LAFAN1 clips; both trackers take it zero-shot, without training on it.
 
-![A squat video from Pexels, the retargeted G1 reference, and the BeyondMimic and SuperMimic policies tracking it zero-shot.](docs/media/video_squat.webp)
+![A dance video from Pexels and the G1 tracking it zero-shot with our policy.](docs/media/video_dance.webp)
 
-*Source video | retargeted G1 reference | BeyondMimic policy (Isaac Lab) | SuperMimic policy trained here (MuJoCo), first 12 s, both zero-shot. Video: Pexels (free licence).*
+*A dance video and our policy tracking it in Isaac Lab, zero-shot, the whole 15 s clip, rendered with the camera angle and lens GVHMR estimates for the video. Video: Pexels (free licence).*
 
-On three test videos (a squat from Pexels and two CMU Panoptic walking and gesturing windows), the BeyondMimic policy (in Isaac and in MuJoCo) and the SuperMimic policy each complete two, and both fail the third. On these 20 to 30 s clips, three to five times longer than the 6 s training windows, the mean root drift of the completed attempts is 35 to 47 cm for the BeyondMimic policy and 73 to 93 cm for the SuperMimic policy. The third video fails in retargeting, not tracking: GMR's inverse kinematics settles into a local minimum on the first frame and keeps one arm behind the back for the whole clip, and the stage audit (`humanoid_motion.video.stage_audit`) flags it at the retargeting stage. See [docs/video.md](docs/video.md).
+On three test videos (a squat from Pexels and two CMU Panoptic walking and gesturing windows), the BeyondMimic policy (in Isaac and in MuJoCo) and the SuperMimic policy each complete two, and both fail the third. On these 20 to 30 s clips, three to five times longer than the 6 s training windows, the mean root drift of the completed attempts is 35 to 47 cm for the BeyondMimic policy and 73 to 93 cm for the SuperMimic policy. The third video fails in retargeting, not tracking: GMR's inverse kinematics settles into a local minimum on the first frame and keeps one arm behind the back for the whole clip, and the stage audit (`humanoid_motion.video.stage_audit`) flags it at the retargeting stage.
+
+The dance clip above is one of five Pexels dance videos (15 to 27 s) run the same way. Each policy tracks one of the five to the end, and not the same one: the BeyondMimic policy the clip shown (in Isaac and in MuJoCo), the SuperMimic policy another. Every other attempt fails between 3.9 and 11.0 s on an ankle or wrist, except on one video that fails in retargeting with the same kind of first-frame local minimum. See [docs/video.md](docs/video.md).
 
 ## BeyondMimic backend results (v0.1)
 
@@ -236,7 +238,7 @@ src/humanoid_motion/
   tracking/sim2sim.py   MuJoCo evaluation harness for both backends; the BeyondMimic policy outside Isaac
   tracking/supermimic/  SuperMimic backend: motion library, exporter adapter, sim2sim player, normalised return
   retarget/sources.py   source loaders: LAFAN1 BVH, AMASS-style SMPL-X
-  video/                video front end: GVHMR adapter, quality gate, stage audit, FK check
+  video/                video front end: GVHMR adapter, quality gate, stage audit, FK check, video camera
   library.py, evaluation.py (metrics and the offline scorer), geometry.py, urdf_kinematics.py
 scripts/                setup, retarget_clip, prepare_lafan1, video_to_reference, import_library, train, evaluate,
                         evaluate_mujoco, score_rollouts, view_motion, view_tracking, render_video, summarize_results
@@ -251,7 +253,7 @@ The two stages exchange only reference motion files, so either backend can be re
 - One attempt per test clip from a nominal start; the only robustness test is a fixed 20 ms actuator delay.
 - The SuperMimic backend is an unofficial reimplementation; its results say how this implementation performs on this data, not how the authors' code would.
 - Every policy is weakest on jumps and chained actions (the BeyondMimic policy also on falls and get-ups), and every policy drifts in the world frame.
-- Video references are only as good as the monocular reconstruction and the retargeting: three test videos, one of which fails in retargeting.
+- Video references are only as good as the monocular reconstruction and the retargeting: eight test videos, two of which fail in retargeting.
 - Flat ground, Unitree G1 only.
 
 ## License and data

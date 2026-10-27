@@ -52,6 +52,8 @@ Each clip gets `<out>/<clip_id>/`:
 
 Every step is skipped when its output already exists. `--manifest NAME` writes `<out>/NAME.json` and `<out>/frozen.json` for `scripts/import_library.py`.
 
+**Rendering from the video's camera.** `python -m humanoid_motion.video.camera --clip_dir <out>/<clip>` writes `camera.json`: the camera GVHMR estimated for the clip (from its in-camera and world body poses), carried through the adapter's rotation and ground offset and GMR's root scaling into the G1 reference frame, with its field of view and the person's pelvis in camera coordinates per frame. `scripts/render_video.py video --camera video --source-camera <clip>=<out>/<clip>/camera.json` then shows the robot with that camera angle and lens, at the place in the frame where the person is; the camera follows the robot's pelvis (smoothed over 1 s), so drift shows on the floor. The README video is rendered this way.
+
 **Choices.**
 - Gender is neutral, and one body shape (the mean of GVHMR's per-frame betas) is used for the whole clip.
 - GVHMR's y-up world becomes z-up with GMR's own rotation matrix, applied at the parameter level.
@@ -76,7 +78,25 @@ A failed gate only marks the clip as not usable in the manifest. The clip is nev
 - `humanoid_motion.video.reconcile` replays GMR's own GVHMR loader for comparison.
 - `humanoid_motion.video.fk_check` recomputes an imported Isaac motion with an independent FK.
 
-**Known limitation.** GMR's first-frame IK can settle in a poor local minimum on some clips (for example, a limb pointing the wrong way for the whole clip). The gate does not catch every such case; `stage_audit` flags it at the retargeting stage.
+**Known limitations.**
+- GMR's first-frame IK can settle in a poor local minimum on some clips (for example, a limb pointing the wrong way for the whole clip). The gate does not catch every such case; `stage_audit` flags it at the retargeting stage.
+- GVHMR's planted feet can tilt toes-down (by about 20° during each squat of the Pexels squat clip), and GMR follows the foot orientation, so the G1 reference stands on its toes: on the squat clip the lower foot's heel is more than 2 cm above its toe in 35 % of the frames. On dance clips the same measure also counts real heel raises.
+
+## Dance videos
+
+Five Pexels dance videos, through `scripts/video_to_reference.py` with the defaults and tracked zero-shot from the reference's first frame, BeyondMimic failure criterion. Every failure is an ankle or wrist more than 25 cm off its reference height.
+
+| Pexels video | Length | BeyondMimic policy, Isaac | BeyondMimic policy, MuJoCo | SuperMimic policy, MuJoCo |
+|---|---:|---|---|---|
+| 7570250 (README video) | 14.6 s | complete | complete | fails at 11.0 s |
+| 8377696 | 15.8 s | fails at 9.7 s | fails at 9.7 s | complete |
+| 7570272 | 23.1 s | fails at 8.6 s | fails at 8.3 s | fails at 8.6 s |
+| 7570258 | 26.5 s | fails at 3.9 s | fails at 3.9 s | fails at 9.0 s |
+| 7570249 | 16.3 s | fails at 1.0 s | fails at 1.1 s | fails at 1.1 s |
+
+- 7570249 fails in retargeting: GMR's first-frame IK leaves the right upper arm 83° (mean) away from the human's for the whole clip, and `stage_audit` flags it.
+- All five fail the gate's joint-limit check, as the squat clip does; the gate only marks clips.
+- The README shows 7570250 with the BeyondMimic policy's Isaac Lab rollout. Its G1 reference lifts the lower foot's heel more than 2 cm above the toe in 33 % of the frames; this measure does not separate the dancer's own heel raises from the toes-down tilt above.
 
 ## Licences
 

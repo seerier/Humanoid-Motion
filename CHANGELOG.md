@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.1
+
+README video; models, results and the pipeline of v0.3 are unchanged.
+
+- README video: a Pexels dance clip, the human video next to the policy that tracks it to the end (the v0.1 BeyondMimic policy, in Isaac Lab). It replaces the squat, whose reconstructed feet tilt toes-down in contact so that the G1 reference stands on its toes in about a third of the clip. Five dance videos were evaluated with both policies; the results are in the README and `docs/video.md`.
+- `humanoid_motion.video.camera`: the camera GVHMR estimated for a clip, in the G1 reference frame (`camera.json`); `scripts/render_video.py video --camera video --source-camera` renders the robot with that camera angle and lens, where the person is in the frame.
+- `scripts/render_video.py video`: `--no-reference` (leave out the retargeted reference column), `--source-label`, `--source-width`.
+
 ## v0.3
 
 A video front end, a second tracking backend, and one evaluation protocol for both. The v0.1 policy is unchanged.

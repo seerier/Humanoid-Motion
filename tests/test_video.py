@@ -192,3 +192,13 @@ def test_smplx_clip_retargets_and_gates(tmp_path):
     result = gate.evaluate(tmp_path / 'run', ROOT)
     assert set(result['checks']) == {'g1_joint_limits', 'g1_foot_penetration', 'human_pelvis_height', 'human_root_jerk'}
     assert abs(result['fps'] - 30.0) < 1e-6 and result['frames'] == len(params['body_pose'])
+
+
+def test_camera_from_poses_recovers_a_static_camera():
+    from humanoid_motion.video.camera import camera_from_poses
+    rng = np.random.default_rng(3)
+    r_wc, centre = Rotation.from_euler('xyz', [95., 2., -30.], degrees=True), np.array([0.3, 1.2, -3.5])
+    r_w, p_w = Rotation.from_rotvec(rng.normal(size=(20, 3))), rng.normal(size=(20, 3))
+    cam = camera_from_poses(p_w, r_w, r_wc.inv().apply(p_w - centre), r_wc.inv() * r_w)
+    assert np.allclose(cam['centre'], centre) and np.allclose(cam['axes'], r_wc.as_matrix())
+    assert cam['forward_max_deg'] < 1e-4 and np.allclose(cam['centre_p5_p95_m'], 0.)
