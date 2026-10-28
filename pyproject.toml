@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "humanoid-motion"
-version = "0.3.1"
+version = "0.3.2"
 description = "Human motion capture and monocular video to physically tracked motion on the Unitree G1: GMR retargeting with audits, a GVHMR video front end, BeyondMimic (PPO, Isaac Lab) and SuperMimic (world model, MuJoCo) tracking backends, one evaluation protocol and replay"
 readme = "README.md"
 license = { text = "MIT" }
