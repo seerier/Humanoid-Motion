@@ -2,7 +2,7 @@
 
 An end-to-end pipeline that turns human motion, from motion capture or a single video, into physically tracked motion on the Unitree G1 humanoid: retarget it to the robot with GMR and audit every clip, track it with one of two physics backends (a multi-motion PPO policy in the BeyondMimic environment in Isaac Lab, or a SuperMimic world-model policy trained with MorphMimic's unofficial reimplementation in MuJoCo Warp), then score both with one evaluation protocol and replay the recorded physics.
 
-![One policy tracking six held-out LAFAN1 test clips on the Unitree G1: dance, run, fight and sports, fight, ground moves, fall and get up.](docs/media/teaser.webp)
+![One policy tracking six held-out LAFAN1 test clips on the Unitree G1: dance, run, fight and sports, fight, jumps, turns.](docs/media/teaser.webp)
 
 *The BeyondMimic policy on six held-out test clips, each tracked to the end. Rendered from recorded Isaac Lab states; nothing is re-simulated for the video.*
 
@@ -34,7 +34,7 @@ What the numbers say, and what they do not:
 - **Where they fail.** Almost every failure is an ankle or wrist more than 25 cm off its reference height. The SuperMimic policy completes more falls and get-ups (7 against 3 of 11) and runs (22 against 19 in Isaac and 20 in MuJoCo, of 22), and slightly fewer jumps (6 against 7 of 17).
 - **Paper settings.** A first SuperMimic run with every switch the paper gives a value for set to that value diverged near iteration 3,000 (critic loss up a hundredfold in 400 iterations, value estimate past the largest possible return); the reported run uses MorphMimic's own defaults, see [docs/supermimic.md](docs/supermimic.md).
 
-![The BeyondMimic policy (Isaac Lab) and the SuperMimic policy trained here (MuJoCo) tracking the same held-out clips: dance, fight, fall and get up.](docs/media/compare.webp)
+![The BeyondMimic policy (Isaac Lab) and the SuperMimic policy trained here (MuJoCo) tracking the same held-out clips: dance, fight, jumps.](docs/media/compare.webp)
 
 *The same held-out clips tracked by the BeyondMimic policy (left, recorded in Isaac Lab) and the SuperMimic policy trained on the same data (right, recorded in MuJoCo); both complete all three.*
 

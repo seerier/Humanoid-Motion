@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.2
+
+README media; models, results and code of v0.3.1 are unchanged.
+
+- README teaser: the two panels on the floor are replaced by two other held-out test clips the policy tracks to the end, a jumping clip (seven hops) and a fight clip with fast turns. The ground-moves clip stayed on the floor for the whole window, and the fall-and-get-up window ended on the floor before the get-up.
+- BeyondMimic | SuperMimic comparison: the fall row is replaced by the same jumping clip, which both policies complete.
+
 ## v0.3.1
 
 README video; models, results and the pipeline of v0.3 are unchanged.
