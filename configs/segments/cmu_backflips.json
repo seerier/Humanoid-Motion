@@ -1,0 +1,50 @@
+[
+  {
+    "id": "asf_88_05_cartwheel_backflip",
+    "source_kind": "asf_amc",
+    "source_file": "data/cmu_mocap/88/88_05.amc",
+    "asf_file": "data/cmu_mocap/88/88.asf",
+    "source_fps": 60,
+    "human_height_m": 1.6515,
+    "start_s": 0.0,
+    "stop_s": 2.46,
+    "category": "backflip",
+    "note": "CMU 88_05 \"cartwheel into backflip\" from the original ASF/AMC; the AMASS SMPL-X twin is cmu_88_05_cartwheel_backflip (check of the ASF/AMC path); height = AMASS mesh stature of subject 88"
+  },
+  {
+    "id": "asf_88_01_backflip",
+    "source_kind": "asf_amc",
+    "source_file": "data/cmu_mocap/88/88_01.amc",
+    "asf_file": "data/cmu_mocap/88/88.asf",
+    "source_fps": 60,
+    "human_height_m": 1.6515,
+    "start_s": 0.0,
+    "stop_s": 3.35,
+    "category": "backflip",
+    "note": "CMU 88_01 \"backflip\" (not in AMASS); height = AMASS mesh stature of subject 88"
+  },
+  {
+    "id": "asf_87_03_backflip",
+    "source_kind": "asf_amc",
+    "source_file": "data/cmu_mocap/87/87_03.amc",
+    "asf_file": "data/cmu_mocap/87/87.asf",
+    "source_fps": 60,
+    "human_height_m": 1.6263,
+    "start_s": 0.0,
+    "stop_s": 4.1,
+    "category": "backflip",
+    "note": "CMU 87_03 \"Backflip\" (not in AMASS); height = AMASS mesh stature of subject 87 (87_01)"
+  },
+  {
+    "id": "asf_87_04_backflip",
+    "source_kind": "asf_amc",
+    "source_file": "data/cmu_mocap/87/87_04.amc",
+    "asf_file": "data/cmu_mocap/87/87.asf",
+    "source_fps": 60,
+    "human_height_m": 1.6263,
+    "start_s": 0.0,
+    "stop_s": 3.58,
+    "category": "backflip",
+    "note": "CMU 87_04 \"backflip\" (not in AMASS); height = AMASS mesh stature of subject 87 (87_01)"
+  }
+]

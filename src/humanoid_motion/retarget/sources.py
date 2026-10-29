@@ -1,6 +1,6 @@
 """One audited place where a human recording becomes GMR source frames.
 
-Two sources, one shape. `load_source(cfg, root)` returns a MotionSource holding the frames GMR consumes plus everything
+Three sources, one shape. `load_source(cfg, root)` returns a MotionSource holding the frames GMR consumes plus everything
 humanoid_motion.retarget.gmr records about them, so the retargeting code contains no per-source branching beyond the
 GMR key it passes to GeneralMotionRetargeting.
 
@@ -11,6 +11,8 @@ Conventions, audited per source rather than assumed:
 
 - bvh_lafan1: BVH header units are centimetres with Y up. GMR's load_bvh_file converts to metres Z-up via
   (x, -z, y); quaternions are wxyz. Frame time comes from the BVH header.
+- asf_amc: CMU Acclaim ASF/AMC, inches / ASF length unit with Y up, converted like LAFAN1 and handed to GMR as
+  LAFAN1-convention frames (humanoid_motion.retarget.asf_amc). Frame rate comes from the config (the CMU index).
 - smplx: AMASS-style SMPL-X npz (also what humanoid_motion.video.gvhmr_adapter writes) is already metres with Z up,
   because the upright rotation lives in each frame's `root_orient`, so no axis matrix is applied. Quaternions are wxyz
   (`Rotation.as_quat(scalar_first=True)` inside GMR's get_smplx_data_offline_fast). The SMPL-X *model's* own rest pose
@@ -56,7 +58,7 @@ AMASS_FIELDS = ('gender', 'betas', 'root_orient', 'pose_body', 'trans', 'mocap_f
 @dataclass
 class MotionSource:
     """A sliced recording in GMR's input shape, plus what the retargeting run records about it."""
-    kind: str                          # our config key: 'bvh_lafan1' | 'smplx'
+    kind: str                          # our config key: 'bvh_lafan1' | 'smplx' | 'asf_amc'
     gmr_source: str                    # GMR src_human key (IK_CONFIG_DICT / GeneralMotionRetargeting)
     frames: list                       # per frame: {joint name: (position, quaternion)}, GMR's own input
     names: list[str]                   # source joint names, order of positions/quaternions
@@ -93,7 +95,11 @@ def load_source(cfg: dict, root: Path) -> MotionSource:
                                 target_fps=float(cfg.get('target_fps', DEFAULT_TARGET_FPS)),
                                 height=cfg['human_height'], body_model_dir=cfg.get('smplx_body_model_dir'),
                                 root=root)
-    raise ValueError(f'source_kind {kind!r}; expected bvh_lafan1 or smplx')
+    if kind == 'asf_amc':
+        return load_cmu_asf_amc(source, root / cfg['asf_file'], cfg['frame_start'], cfg['frame_end_exclusive'],
+                                source_fps=float(cfg['source_fps']), target_fps=float(cfg['target_fps']),
+                                human_height_m=float(cfg['human_height_m']))
+    raise ValueError(f'source_kind {kind!r}; expected bvh_lafan1, smplx or asf_amc')
 
 
 def _check_slice(start: int, stop: int, available: int) -> None:
@@ -139,6 +145,94 @@ def load_lafan1_bvh(source: Path, start: int, stop: int, human_height_m: float) 
         meta={'height_assumption_m': human_height_m, 'loader_hardcoded_height_m': upstream_height},
         audit=axis_audit(positions, names, root_name='Hips', head_name='Head'),
     )
+
+
+# --------------------------------------------------------------------------------------------------
+# CMU ASF/AMC
+# --------------------------------------------------------------------------------------------------
+
+def load_cmu_asf_amc(source: Path, asf: Path, start: int, stop: int, source_fps: float, target_fps: float,
+                     human_height_m: float) -> MotionSource:
+    """A CMU Graphics Lab AMC trial with its subject's ASF skeleton, as LAFAN1-convention frames
+    (humanoid_motion.retarget.asf_amc), retargeted with GMR's bvh_lafan1 table.
+
+    AMC files carry no frame rate; the CMU subject index lists it (60 or 120 Hz), so the config states it. Only
+    whole-number decimation is done (every k-th frame), so every saved frame is a recorded sample; start and stop
+    count frames at target_fps.
+    """
+    from scipy.spatial.transform import Rotation
+
+    from humanoid_motion.retarget import asf_amc
+
+    step = source_fps / target_fps
+    if abs(step - round(step)) > 1e-9 or round(step) < 1:
+        raise ValueError(f'target_fps {target_fps} must divide source_fps {source_fps}')
+    skeleton = asf_amc.parse_asf(asf)
+    recorded = asf_amc.parse_amc(source)
+    kept = recorded[::int(round(step))]
+    _check_slice(start, stop, len(kept))
+    window, branch_moves = asf_amc.two_dof_branch(skeleton, kept[start:stop])
+    names, positions, matrices = asf_amc.lafan1_joints(skeleton, window)
+    quaternions = Rotation.from_matrix(matrices.reshape(-1, 3, 3)).as_quat(scalar_first=True).reshape(len(window), -1, 4)
+    frames = []
+    for k in range(len(window)):
+        frame = {n: [positions[k, j], quaternions[k, j]] for j, n in enumerate(names)}
+        # As GMR's load_bvh_file does for LAFAN1: ankle position, toe orientation.
+        frame['LeftFootMod'] = [frame['LeftFoot'][0], frame['LeftToe'][1]]
+        frame['RightFootMod'] = [frame['RightFoot'][0], frame['RightToe'][1]]
+        frames.append(frame)
+    parents = np.array([-1 if asf_amc.LAFAN1_PARENTS[n] is None else names.index(asf_amc.LAFAN1_PARENTS[n])
+                        for n in names])
+    independent = _asf_scipy_fk(skeleton, window, [asf_amc.LAFAN1_JOINTS[n][0] for n in names]) @ asf_amc.AXIS_MATRIX.T
+    audit = axis_audit(positions, names, root_name='Hips', head_name='Head')
+    audit['skeleton_rest'] = asf_amc.skeleton_extent_m(skeleton)
+    audit['two_dof_branch_frames_moved'] = branch_moves
+    return MotionSource(
+        kind='asf_amc', gmr_source='bvh_lafan1', frames=frames, names=names, parents=parents,
+        positions=positions, quaternions=quaternions, frame_time=1.0 / target_fps, total_frames=len(kept),
+        human_height_m=float(human_height_m),
+        stance_joints=('LeftFoot', 'RightFoot'), ik_foot_roles=('LeftFootMod', 'RightFootMod'),
+        independent_source_max_error_m=float(np.max(np.abs(independent - positions))),
+        conventions={
+            'positions': ('Acclaim ASF/AMC, inches / ASF length unit, Y-up -> metres Z-up via (x,-z,y); joint origins '
+                          'named as LAFAN1 joints; no trajectory recentering'),
+            'quaternions': 'wxyz; LAFAN1 joint frames (x along the bone), see humanoid_motion.retarget.asf_amc',
+            'derivatives': ('numpy.gradient at 1/target_fps, central interior / one-sided endpoints; diagnostics '
+                            'only, tracker must resample and recompute'),
+        },
+        meta={'format': 'CMU Acclaim ASF/AMC', 'asf_path': str(asf), 'asf_sha256': sha256(asf),
+              'source_fps': source_fps, 'target_fps': target_fps, 'decimation': int(round(step)),
+              'height_assumption_m': float(human_height_m), 'metres_per_asf_unit': skeleton.metres_per_unit},
+        audit=audit,
+    )
+
+
+def _asf_scipy_fk(skeleton, frames: list, bones: list[str]) -> np.ndarray:
+    """Bone start points by a second implementation of the Acclaim chain (SciPy rotations, 'xyz' extrinsic Euler
+    angles), metres, ASF frame; checks humanoid_motion.retarget.asf_amc.forward_kinematics."""
+    from scipy.spatial.transform import Rotation
+
+    index = {name: k for k, name in enumerate(skeleton.root_order)}
+    values = np.stack([f['root'] for f in frames])
+    c_root = Rotation.from_euler('xyz', skeleton.root_axis_deg, degrees=True)
+    world = {'root': c_root * Rotation.from_euler('xyz', values[:, [index['rx'], index['ry'], index['rz']]],
+                                                  degrees=True) * c_root.inv()}
+    end = {'root': skeleton.root_position + values[:, [index['tx'], index['ty'], index['tz']]]}
+    start = {'root': end['root']}
+    pending = ['root']
+    while pending:
+        parent = pending.pop()
+        for name in skeleton.children.get(parent, []):
+            bone = skeleton.bones[name]
+            angles = np.zeros((len(frames), 3))
+            for k, dof in enumerate(bone.dof):
+                angles[:, 'xyz'.index(dof[1])] = [f[name][k] for f in frames]
+            c = Rotation.from_euler('xyz', bone.axis_deg, degrees=True)
+            world[name] = world[parent] * c * Rotation.from_euler('xyz', angles, degrees=True) * c.inv()
+            start[name] = end[parent]
+            end[name] = start[name] + bone.length * world[name].apply(bone.direction)
+            pending.append(name)
+    return np.stack([start[b] for b in bones], axis=1) * skeleton.metres_per_unit
 
 
 # --------------------------------------------------------------------------------------------------

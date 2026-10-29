@@ -1,7 +1,7 @@
 """GMR retargeting backend: run unmodified GMR IK headlessly, keep every selected frame and audit FK.
 
-Sources (humanoid_motion.retarget.sources): LAFAN1 BVH (default) or an AMASS-style SMPL-X npz (config
-source_kind 'smplx', e.g. from humanoid_motion.video.gvhmr_adapter).
+Sources (humanoid_motion.retarget.sources): LAFAN1 BVH (default), an AMASS-style SMPL-X npz (config
+source_kind 'smplx', e.g. from humanoid_motion.video.gvhmr_adapter) or a CMU ASF/AMC trial ('asf_amc').
 Optional config key floor_limit (absent = unmodified GMR): an IK ground constraint, see add_floor_limit.
 """
 import hashlib
@@ -230,7 +230,7 @@ def summary(values: np.ndarray) -> dict:
 
 
 def retarget(cfg: dict, output: Path | None = None) -> dict:
-    """Retarget one source window described by cfg (LAFAN1 BVH, or SMPL-X with source_kind 'smplx').
+    """Retarget one source window described by cfg (LAFAN1 BVH; SMPL-X with source_kind 'smplx'; CMU ASF/AMC with 'asf_amc').
 
     Writes reference.npz, motion.pkl, motion.csv, metadata.json, diagnostics.json. LAFAN1 outputs are unchanged by
     the SMPL-X support: the source kind and axis audit are recorded only for other sources.

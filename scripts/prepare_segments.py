@@ -13,8 +13,11 @@ floor. Here each segment is named in a spec file and retargeted on its own:
 4. Root and bodies lowered by the offset, so the floor is z = 0; 50 Hz reference and independent URDF kinematics.
 5. Audit: numbers only (lowest body point, lowest sole, joint speed, URDF limits, IK error); no segment is dropped.
 
-Spec: a JSON list of {"id", "source_kind": "bvh_lafan1" | "smplx", "source_file", "start_s", "stop_s", "category",
-"note"}. LAFAN1 sources may be given as "lafan1:<stem>" (extracted from data/lafan1.zip like prepare_lafan1.py).
+Spec: a JSON list of {"id", "source_kind": "bvh_lafan1" | "smplx" | "asf_amc", "source_file", "start_s", "stop_s",
+"category", "note"}. LAFAN1 sources may be given as "lafan1:<stem>" (extracted from data/lafan1.zip like
+prepare_lafan1.py). CMU ASF/AMC segments also name "asf_file", "source_fps" (from the CMU subject index),
+"human_height_m" and optionally "target_fps" (a divisor of source_fps; default source_fps); they use the LAFAN1 GMR
+settings, since humanoid_motion.retarget.asf_amc hands GMR LAFAN1-convention frames.
 Writes <out>/<id>/{plain, floor, gmr, prepared, segment.json}, then <out>/<name>.json and <out>/frozen.json for
 scripts/import_library.py --manifests <name> --data-root <out>. <out> must lie inside the repository.
 """
@@ -73,6 +76,12 @@ def base_config(seg: dict, smplx_fps: float) -> dict:
         cfg = json.loads((ROOT / 'configs/walk1_s1.json').read_text())
         fps = LAFAN1_FPS
         cfg.update(source_file=str(source.resolve().relative_to(ROOT)), first_frame_max_iter=200)
+    elif kind == 'asf_amc':
+        fps = float(seg.get('target_fps', seg['source_fps']))
+        cfg = json.loads((ROOT / 'configs/walk1_s1.json').read_text())
+        cfg.update(source_kind='asf_amc', source_file=seg['source_file'], asf_file=seg['asf_file'],
+                   source_fps=float(seg['source_fps']), target_fps=fps, human_height_m=float(seg['human_height_m']),
+                   first_frame_max_iter=200)
     elif kind == 'smplx':
         fps = smplx_fps
         cfg = {'source_kind': 'smplx', 'source_file': seg['source_file'], 'target_fps': fps, 'robot': 'unitree_g1',
