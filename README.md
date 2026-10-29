@@ -50,6 +50,14 @@ On three test videos (a squat from Pexels and two CMU Panoptic walking and gestu
 
 The dance clip above is one of five Pexels dance videos (15 to 27 s) run the same way. Each policy tracks one of the five to the end, and not the same one: the BeyondMimic policy the clip shown (in Isaac and in MuJoCo), the SuperMimic policy another. Every other attempt fails between 3.9 and 11.0 s on an ankle or wrist, except on one video that fails in retargeting with the same kind of first-frame local minimum. See [docs/video.md](docs/video.md).
 
+## Acrobatics (v0.4)
+
+Thirteen acrobatic segments from LAFAN1 and the CMU motion capture database (cartwheels, a kip-up, a backward roll, a side flip, backflips, a front handspring, breakdance flips), retargeted with GMR under a floor constraint on every collision geom of the robot, so that hands, knees and shoulders stay above the floor as well as the feet, and trained with the BeyondMimic backend. Four are tracked to the end from the first frame: a cartwheel, a kip-up and a backward roll by one 13-segment policy, and a back handspring by a single-clip policy. The other nine fail partway: on the side flip and the 88_01 backflip the robot takes off slower than the reference, and on the front handspring it sinks in the hand support. See [docs/acrobatics.md](docs/acrobatics.md).
+
+![Human motion capture and the G1 policy: a LAFAN1 cartwheel and the CMU 88_08 back handspring.](docs/media/acrobatics.webp)
+
+*Human motion capture (left) and the policy (right), rendered from recorded Isaac Lab states: a LAFAN1 cartwheel (top) and CMU 88_08, a back handspring (bottom). These policies were trained on these clips, unlike the held-out clips above.*
+
 ## BeyondMimic backend results (v0.1)
 
 The released policy tracks **190 of 230** held-out LAFAN1 test clips (6 s each) without a failure, from a single attempt per clip.
@@ -237,11 +245,12 @@ src/humanoid_motion/
   tracking/observations.py, tracking/isaac_export.py, tracking/checks.py
   tracking/sim2sim.py   MuJoCo evaluation harness for both backends; the BeyondMimic policy outside Isaac
   tracking/supermimic/  SuperMimic backend: motion library, exporter adapter, sim2sim player, normalised return
-  retarget/sources.py   source loaders: LAFAN1 BVH, AMASS-style SMPL-X
+  retarget/sources.py   source loaders: LAFAN1 BVH, AMASS-style SMPL-X, CMU ASF/AMC (retarget/asf_amc.py)
   video/                video front end: GVHMR adapter, quality gate, stage audit, FK check, video camera
   library.py, evaluation.py (metrics and the offline scorer), geometry.py, urdf_kinematics.py
-scripts/                setup, retarget_clip, prepare_lafan1, video_to_reference, import_library, train, evaluate,
-                        evaluate_mujoco, score_rollouts, view_motion, view_tracking, render_video, summarize_results
+scripts/                setup, retarget_clip, prepare_lafan1, prepare_segments, video_to_reference, import_library, train,
+                        evaluate, evaluate_mujoco, score_rollouts, view_motion, view_tracking, render_video,
+                        summarize_results
 tests/                  unit tests (pytest)
 ```
 
@@ -254,12 +263,13 @@ The two stages exchange only reference motion files, so either backend can be re
 - The SuperMimic backend is an unofficial reimplementation; its results say how this implementation performs on this data, not how the authors' code would.
 - Every policy is weakest on jumps and chained actions (the BeyondMimic policy also on falls and get-ups), and every policy drifts in the world frame.
 - Video references are only as good as the monocular reconstruction and the retargeting: eight test videos, two of which fail in retargeting.
+- The acrobatics policies are evaluated on the clips they were trained on, and no flip that turns over without hand support (the side flip, the standing backflips) is tracked to the end.
 - Flat ground, Unitree G1 only.
 
 ## License and data
 
-The code is MIT-licensed. LAFAN1 is CC BY-NC-ND 4.0, so the released policies and videos are for non-commercial research use, with attribution to Ubisoft La Forge. GVHMR and the SMPL-X model are for non-commercial research only and are not redistributed. Upstream components keep their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
+The code is MIT-licensed. LAFAN1 is CC BY-NC-ND 4.0, so the released policies and videos are for non-commercial research use, with attribution to Ubisoft La Forge. GVHMR and the SMPL-X model are for non-commercial research only and are not redistributed. The acrobatics segments also use AMASS (non-commercial research) and the CMU Graphics Lab Motion Capture Database; neither the source motions nor the retargeted references are redistributed. Upstream components keep their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Acknowledgements
 
-This project builds on [GMR](https://arxiv.org/abs/2510.02252) (Araújo et al., ICRA 2026), [BeyondMimic](https://arxiv.org/abs/2508.08241) (Liao et al., 2025), [SuperMimic](https://arxiv.org/abs/2610.28480) (Liao et al., CoRL 2026) through the open [MorphMimic](https://github.com/lzyang2000/morphmimic) implementation (Yang et al., 2026), [GVHMR](https://github.com/zju3dv/GVHMR) (Shen et al., SIGGRAPH Asia 2024), [SMPL-X](https://smpl-x.is.tue.mpg.de/), [LAFAN1](https://github.com/ubisoft/ubisoft-laforge-animation-dataset) (Harvey et al., SIGGRAPH 2020), [mjlab](https://github.com/mujocolab/mjlab), [MuJoCo](https://github.com/google-deepmind/mujoco), [Isaac Lab](https://github.com/isaac-sim/IsaacLab) and [rsl_rl](https://github.com/leggedrobotics/rsl_rl).
+This project builds on [GMR](https://arxiv.org/abs/2510.02252) (Araújo et al., ICRA 2026), [BeyondMimic](https://arxiv.org/abs/2508.08241) (Liao et al., 2025), [SuperMimic](https://arxiv.org/abs/2610.28480) (Liao et al., CoRL 2026) through the open [MorphMimic](https://github.com/lzyang2000/morphmimic) implementation (Yang et al., 2026), [GVHMR](https://github.com/zju3dv/GVHMR) (Shen et al., SIGGRAPH Asia 2024), [SMPL-X](https://smpl-x.is.tue.mpg.de/), [LAFAN1](https://github.com/ubisoft/ubisoft-laforge-animation-dataset) (Harvey et al., SIGGRAPH 2020), [AMASS](https://amass.is.tue.mpg.de) (Mahmood et al., ICCV 2019), the [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu) (funded by NSF EIA-0196217), [mjlab](https://github.com/mujocolab/mjlab), [MuJoCo](https://github.com/google-deepmind/mujoco), [Isaac Lab](https://github.com/isaac-sim/IsaacLab) and [rsl_rl](https://github.com/leggedrobotics/rsl_rl).

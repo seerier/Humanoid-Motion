@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4
+
+Acrobatics with the BeyondMimic backend. The v0.1 and v0.3 policies, results and LAFAN1 retargeting are unchanged.
+
+- Hand-picked segments (`scripts/prepare_segments.py`, `configs/segments/acrobatics.json` and `acrobatics_v2.json`): windows of LAFAN1 BVH, AMASS SMPL-X or CMU ASF/AMC, retargeted by GMR with its IK floor constraint on every collision geom of the G1 (`floor_limit` with `geoms: collision`, shoulder cylinders included), lowered to the floor and resampled to 50 Hz like the LAFAN1 clips. With the default `geoms: feet` GMR output is unchanged.
+- CMU ASF/AMC source (`humanoid_motion.retarget.asf_amc`) for the standing backflips AMASS leaves out, in the joint conventions of GMR's LAFAN1 loader, with toe and Euler-branch corrections; checked against the AMASS fits of the same recordings.
+- `scripts/train.py --init-from`: a new run that starts from another run's policy, observation normalizers and learning rate, on another library.
+- `scripts/render_video.py`: `--camera axis` (one azimuth per clip, along its rotation axis, for flips and cartwheels), `pipeline --no-reference`, the SMPL-X head joint in the pipeline layout.
+- Results (`docs/acrobatics.md`, README): 13 segments, evaluated on the clips the policies were trained on. A 13-segment policy tracks a cartwheel, a kip-up and a backward roll to the end, and a single-clip policy the CMU 88_08 back handspring; the side flip, the backflips and the front handspring fail partway, at the take-off or in the hand support.
+
 ## v0.3.2
 
 README media; models, results and code of v0.3.1 are unchanged.
