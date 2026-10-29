@@ -70,6 +70,35 @@ def test_lowest_point_matches_the_audit_sole_height():
             assert R.geom_lowest_point(model, data, g)[2] == pytest.approx(R.geom_bottom_z(model, data, g), abs=1e-12)
 
 
+def test_lowest_point_of_every_collision_geom():
+    """floor_limit geoms 'collision': meshes, the sole spheres and the shoulder cylinders; cylinders against sampled rims."""
+    rng = np.random.default_rng(1)
+    model = mj.MjModel.from_xml_path(str(G1_XML))
+    data = mj.MjData(model)
+    groups = R.collision_geoms_by_body(model)
+    geoms = [g for ids in groups for g in ids]
+    assert len(geoms) == len(set(geoms)) == sum(1 for g in range(model.ngeom) if model.geom_bodyid[g]
+                                               and (model.geom_contype[g] or model.geom_conaffinity[g]))
+    assert any(model.geom_type[g] == mj.mjtGeom.mjGEOM_CYLINDER for g in geoms)
+    theta = np.linspace(0, 2 * np.pi, 4000)
+    for _ in range(10):
+        data.qpos[:] = model.qpos0
+        data.qpos[3:7] = rng.normal(size=4)
+        data.qpos[3:7] /= np.linalg.norm(data.qpos[3:7])
+        lo, hi = model.jnt_range[1:].T
+        data.qpos[7:] = rng.uniform(lo, hi)
+        mj.mj_forward(model, data)
+        for g in geoms:
+            low = R.geom_bottom_z(model, data, g)
+            assert R.geom_lowest_point(model, data, g)[2] == pytest.approx(low, abs=1e-12)
+            if model.geom_type[g] == mj.mjtGeom.mjGEOM_CYLINDER:
+                radius, half = model.geom_size[g, :2]
+                rims = [np.stack([radius * np.cos(theta), radius * np.sin(theta), np.full_like(theta, s * half)], 1)
+                        for s in (-1, 1)]
+                world = data.geom_xpos[g] + np.concatenate(rims) @ data.geom_xmat[g].reshape(3, 3).T
+                assert low == pytest.approx(world[:, 2].min(), abs=1e-6)
+
+
 @pytest.mark.skipif(not BVH.exists(), reason='LAFAN1 BVH not present')
 def test_floor_out_of_range_is_plain_gmr_and_floor_in_range_stops_penetration(tmp_path):
     """A floor far below changes nothing; a floor 1 cm above plain GMR's lowest sole is held by both kinds."""
@@ -89,10 +118,13 @@ def test_floor_out_of_range_is_plain_gmr_and_floor_in_range_stops_penetration(tm
     mink_kind = {'kind': 'mink_collision'}
     out = {name: run(name, spec) for name, spec in {
         'far': {'floor_height_m': -1.}, 'mink_far': {**mink_kind, 'floor_height_m': -1.},
-        'on': {'floor_height_m': floor}, 'mink_on': {**mink_kind, 'floor_height_m': floor}}.items()}
+        'on': {'floor_height_m': floor}, 'mink_on': {**mink_kind, 'floor_height_m': floor},
+        'body_on': {'floor_height_m': floor, 'geoms': 'collision'}}.items()}
     for far in ('far', 'mink_far'):
         assert (tmp_path / far / 'motion.csv').read_bytes() == (tmp_path / 'off/motion.csv').read_bytes()
         assert out[far]['floor_limit']['active_rows'] == 0
-    for name in ('on', 'mink_on'):
+    for name in ('on', 'mink_on', 'body_on'):
         on = out[name]['floor_limit']
         assert on['frames_below_floor_gt_1mm'] == 0 and on['solver_fallback_frames'] == [] and on['active_rows'] > 0
+    assert 'geoms' not in out['on']['floor_limit'] and out['body_on']['floor_limit']['geoms'] == 'collision'
+    assert out['body_on']['floor_limit']['lowest_body_minus_floor_m']['min'] >= -1e-3

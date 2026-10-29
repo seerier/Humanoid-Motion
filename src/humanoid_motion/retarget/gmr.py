@@ -50,6 +50,8 @@ def geom_bottom_z(model, data, g: int) -> float:
         return z - size[0]
     if kind == mj.mjtGeom.mjGEOM_CAPSULE:
         return z - size[0] - abs(axis_z[2]) * size[1]
+    if kind == mj.mjtGeom.mjGEOM_CYLINDER:   # rim point: half-height along the axis, radius across it
+        return z - abs(axis_z[2]) * size[1] - np.sqrt(max(0., 1 - axis_z[2] ** 2)) * size[0]
     if kind == mj.mjtGeom.mjGEOM_BOX:
         return z - float(np.abs(axis_z) @ size)
     if kind == mj.mjtGeom.mjGEOM_MESH:
@@ -67,6 +69,12 @@ def geom_lowest_point(model, data, g: int) -> np.ndarray:
         return centre - [0., 0., size[0]]
     if kind == mj.mjtGeom.mjGEOM_CAPSULE:
         return centre - np.sign(rot[2, 2]) * size[1] * rot[:, 2] - [0., 0., size[0]]
+    if kind == mj.mjtGeom.mjGEOM_CYLINDER:   # end disc lower along the axis, then down across the axis to the rim
+        axis = rot[:, 2]
+        across = np.array([0., 0., 1.]) - axis[2] * axis
+        norm = np.linalg.norm(across)
+        rim = across / norm * size[0] if norm > 1e-9 else np.zeros(3)
+        return centre - np.sign(axis[2]) * size[1] * axis - rim
     if kind == mj.mjtGeom.mjGEOM_BOX:
         return centre + rot @ (-np.sign(rot[2]) * size[:3])
     if kind == mj.mjtGeom.mjGEOM_MESH:
@@ -150,12 +158,24 @@ class MinkLimitsByKeyword:
         return mink.solve_ik(configuration, tasks, dt, solver, damping, safety_break=True, limits=safety_break)
 
 
+def collision_geoms_by_body(model) -> list[list[int]]:
+    """Every collision geom of the robot (contype or conaffinity set, not on the world body), grouped by body."""
+    groups = {}
+    for g in range(model.ngeom):
+        body = int(model.geom_bodyid[g])
+        if body and (model.geom_contype[g] or model.geom_conaffinity[g]):
+            groups.setdefault(body, []).append(g)
+    return list(groups.values())
+
+
 def add_floor_limit(r: GeneralMotionRetargeting, foot_geoms: list[list[int]], spec: dict):
     """Opt-in IK ground constraint on every foot collision geom, appended to r.ik_limits.
 
     spec: floor_height_m (required; the floor in the GMR frame, normally the recording's ground offset so the output
     stays in plain GMR's frame), kind, gain, minimum_distance_m, detection_distance_m, and for kind 'mink_collision'
-    bound_relaxation and mink_units.
+    bound_relaxation and mink_units. The caller chooses the geoms: the feet (default), or with spec geoms 'collision'
+    every collision geom of the robot (retarget passes collision_geoms_by_body), for motions with hands, knees or the
+    back on the floor (cartwheels, kip-ups).
     - kind 'floor' (default): FloorLimit above.
     - kind 'mink_collision': mink.CollisionAvoidanceLimit pairing each foot geom with the model's 'floor' plane, moved
       to floor_height_m. mink 0.0.13 bounds a pair's approach by gain * (d - d_min) / dt although the QP variable is a
@@ -177,6 +197,8 @@ def add_floor_limit(r: GeneralMotionRetargeting, foot_geoms: list[list[int]], sp
     info = dict(kind=kind, floor_height_m=float(spec['floor_height_m']), gain=gain, minimum_distance_m=minimum,
                 detection_distance_m=detection,
                 foot_geoms={model.body(int(model.geom_bodyid[ids[0]])).name: [int(g) for g in ids] for ids in foot_geoms})
+    if spec.get('geoms', 'feet') != 'feet':   # recorded only when set, so earlier floor-limit metadata is unchanged
+        info['geoms'] = spec['geoms']
     if kind == 'floor':
         limit = FloorLimit(model, feet, spec['floor_height_m'], gain=gain, minimum_distance=minimum, detection_distance=detection)
     elif kind == 'mink_collision':
@@ -239,6 +261,7 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     feet = [sole_body(model, role[name]) for name in src.ik_foot_roles]
     target_names = list(r.human_scale_table)
     qposes, targets, positions, rotations, foot_bottoms, ik_errors, rotation_errors = [], [], [], [], [], [], []
+    body_bottoms = []   # lowest point of any collision geom, only with floor_limit geoms 'collision'
     # Optional: let the first (cold-start) frame iterate to convergence; GMR's own cap applies afterwards.
     first_frame_max_iter, default_max_iter = cfg.get('first_frame_max_iter'), r.max_iter
     check_data = mj.MjData(model)
@@ -250,8 +273,13 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
             len(ids) == 4 and all(model.geom_type[g] == mj.mjtGeom.mjGEOM_SPHERE for g in ids) for ids in foot_geoms)
     # Optional ground constraint {floor_height_m, kind, gain, minimum_distance_m, ...} (add_floor_limit); absent = unmodified GMR.
     floor_limit, floor_info, floor_fallbacks = None, None, []
+    body_geoms = None
     if cfg.get('floor_limit'):
-        floor_limit, floor_info = add_floor_limit(r, foot_geoms, cfg['floor_limit'])
+        choice = cfg['floor_limit'].get('geoms', 'feet')
+        if choice not in ('feet', 'collision'):
+            raise ValueError(f"floor_limit geoms {choice!r}; expected 'feet' or 'collision'")
+        body_geoms = collision_geoms_by_body(model) if choice == 'collision' else None
+        floor_limit, floor_info = add_floor_limit(r, body_geoms or foot_geoms, cfg['floor_limit'])
     tick = time.perf_counter()
     for k, frame in enumerate(frames):
         r.max_iter = first_frame_max_iter if k == 0 and first_frame_max_iter else default_max_iter
@@ -274,6 +302,8 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
         positions.append(check_data.xpos.copy())
         rotations.append(check_data.xquat.copy())
         foot_bottoms.append([[geom_bottom_z(model, check_data, g) for g in ids] for ids in foot_geoms])
+        if body_geoms:
+            body_bottoms.append(min(geom_bottom_z(model, check_data, g) for ids in body_geoms for g in ids))
     elapsed = time.perf_counter() - tick
     r.max_iter = default_max_iter
     qpos, targets, positions, rotations, foot_bottoms, ik_errors = map(np.array, (qposes, targets, positions, rotations, foot_bottoms, ik_errors))
@@ -283,7 +313,8 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
     source_speed = np.linalg.norm(np.gradient(source_feet, frame_time, axis=0), axis=-1)
     stance_floor = np.percentile(source_feet[:, :, 2], 5, axis=0)
     stance = (source_feet[:, :, 2] <= stance_floor + cfg['stance_height_above_p05_m']) & (source_speed < cfg['stance_speed_m_s'])
-    np.savez_compressed(out / 'reference.npz', qpos=qpos, source_positions=source_positions, source_quaternions=source_quaternions, source_names=np.array(names), source_parents=src.parents, target_positions=targets, target_names=np.array(target_names), body_positions=positions, body_quaternions=rotations, body_names=np.array(body_names), timestamps=np.arange(len(qpos))*frame_time, stance_mask=stance, foot_collision_bottom_z=foot_bottoms, ik_error=ik_errors)
+    np.savez_compressed(out / 'reference.npz', qpos=qpos, source_positions=source_positions, source_quaternions=source_quaternions, source_names=np.array(names), source_parents=src.parents, target_positions=targets, target_names=np.array(target_names), body_positions=positions, body_quaternions=rotations, body_names=np.array(body_names), timestamps=np.arange(len(qpos))*frame_time, stance_mask=stance, foot_collision_bottom_z=foot_bottoms, ik_error=ik_errors,
+                        **({'body_collision_bottom_z': np.array(body_bottoms)} if body_geoms else {}))
     with (out / 'motion.pkl').open('wb') as f:
         pickle.dump({'fps': fps, 'root_pos': qpos[:, :3], 'root_rot': qpos[:, [4, 5, 6, 3]], 'dof_pos': qpos[:, 7:], 'local_body_pos': None, 'link_body_list': None}, f)
     # Explicit named contract from pinned csv_to_npz.py, independently of model size.
@@ -341,6 +372,9 @@ def retarget(cfg: dict, output: Path | None = None) -> dict:
                                       'lowest_sole_minus_floor_m': {'min': float(gap.min()), 'p05': float(np.percentile(gap, 5))},
                                       'frames_below_floor_gt_1mm': int((gap < -1e-3).sum()),
                                       'frames_within_5mm_of_floor': int((gap < 5e-3).sum())}
+        if body_geoms:
+            lowest = np.array(body_bottoms) - floor_info['floor_height_m']
+            diagnostics['floor_limit']['lowest_body_minus_floor_m'] = {'min': float(lowest.min()), 'p05': float(np.percentile(lowest, 5))}
     commits ={name: upstream_commit(name) for name in ('GMR','lafan1','whole_body_tracking')}
     meta = {'config':cfg,'upstream_commits':commits,'source':{**({} if lafan1 else {'kind':src.kind}),'path':cfg['source_file'],'sha256':sha256(source),'frame_start':start,'frame_end_exclusive':stop,'total_frames':src.total_frames,'fps':fps,'frame_time_s':frame_time,'positions':src.conventions['positions'],'quaternions':src.conventions['quaternions'],**src.meta},'model':{'xml_path':str(xml.relative_to(ROOT)),'sha256':sha256(xml),'nq':model.nq,'nv':model.nv,'nu':model.nu,'root':f'{model.body(1).name} free joint, xyz metres + wxyz','joint_names':joint_names,'joint_units':'radians','hands':'fixed rubber hands; no finger actuators' if cfg['robot'] == 'unitree_g1' else 'as in the GMR model','feet':feet,'ik_config_path':str(r.xml_file).replace('assets/unitree_g1/g1_mocap_29dof.xml','general_motion_retargeting/ik_configs/bvh_lafan1_to_g1.json'),'ik_timestep_s':model.opt.timestep},'csv':{'columns':['root_x','root_y','root_z','qx','qy','qz','qw']+expected,'fps':fps,'resampled':False,'target':'pinned BeyondMimic CSV input, not its final training NPZ'},'outputs':{name:sha256(out/name) for name in ('reference.npz','motion.pkl','motion.csv')}}
     ik_path = Path(IK_CONFIG_DICT[src.gmr_source][cfg['robot']])

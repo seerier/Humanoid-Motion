@@ -1,0 +1,92 @@
+[
+  {
+    "id": "lafan1_cartwheel_a",
+    "source_kind": "bvh_lafan1",
+    "source_file": "lafan1:dance1_subject1",
+    "start_s": 104.0,
+    "stop_s": 110.0,
+    "category": "cartwheel",
+    "note": "LAFAN1 dance1_subject1, cartwheel"
+  },
+  {
+    "id": "lafan1_kipup_a",
+    "source_kind": "bvh_lafan1",
+    "source_file": "lafan1:fallAndGetUp2_subject3",
+    "start_s": 38.5,
+    "stop_s": 44.5,
+    "category": "kip_up",
+    "note": "LAFAN1 fallAndGetUp2_subject3, kip-up"
+  },
+  {
+    "id": "lafan1_roll_c",
+    "source_kind": "bvh_lafan1",
+    "source_file": "lafan1:fallAndGetUp2_subject3",
+    "start_s": 82.5,
+    "stop_s": 88.5,
+    "category": "roll",
+    "note": "LAFAN1 fallAndGetUp2_subject3, backward roll to standing"
+  },
+  {
+    "id": "cmu_90_08_side_flip",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/90/90_08_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 5.59,
+    "category": "side_flip",
+    "note": "CMU 90_08 \"side flip\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_88_05_cartwheel_backflip",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/88/88_05_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 2.46,
+    "category": "backflip",
+    "note": "CMU 88_05 \"cartwheel into backflip\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_90_19_monkey_backflip",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/90/90_19_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 8.64,
+    "category": "backflip",
+    "note": "CMU 90_19 \"monkey backflip\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_88_08_crouch_flip_back",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/88/88_08_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 4.79,
+    "category": "backflip",
+    "note": "CMU 88_08 \"crouch and flip back\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_90_02_cartwheel",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/90/90_02_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 6.47,
+    "category": "cartwheel",
+    "note": "CMU 90_02 \"cartwheel\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_90_14_front_handspring",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/90/90_14_stageii.npz",
+    "start_s": 0.0,
+    "stop_s": 6.96,
+    "category": "handspring",
+    "note": "CMU 90_14 \"front hand flip\" (AMASS SMPL-X N)"
+  },
+  {
+    "id": "cmu_85_14_flips_a",
+    "source_kind": "smplx",
+    "source_file": "data/amass/CMU/85/85_14_stageii.npz",
+    "start_s": 9.0,
+    "stop_s": 13.5,
+    "category": "breakdance",
+    "note": "CMU 85_14 \"BreakSequencewithFlips\" (AMASS SMPL-X N)"
+  }
+]
