@@ -8,6 +8,8 @@ offscreen renderer; nothing is re-simulated.
         --webp outputs/videos/demo.webp
     # one row per clip: human source joints | G1 kinematic reference | recorded physical execution (also for failures)
     python scripts/render_video.py pipeline --library ... --evaluation ... --clips dance2_subject4_f2820_3000
+    # flips and cartwheels: one azimuth per clip, looking along its rotation axis (the heading is undefined upside down)
+    python scripts/render_video.py pipeline ... --camera axis --clips cmu_90_08_side_flip
     # analysis only, not for demos: the reference as a translucent grey copy over the execution
     python scripts/render_video.py grid ... --clips jumps1_subject1_f2820_3000 --ghost
     # one row per clip, one column per policy evaluated on the same library (e.g. two tracking backends)
@@ -65,7 +67,7 @@ CINE_ELEVATION = -4.0                                                     # near
 
 
 def lens(camera: str) -> float:
-    return CINE_FOVY if camera == 'cinematic' else 45.
+    return CINE_FOVY if camera in ('cinematic', 'axis') else 45.
 
 
 def build_model():
@@ -220,6 +222,32 @@ def turn_with(root_quat: np.ndarray, fps: float, side: float = -35., max_turn: f
     return azimuth
 
 
+def axis_azimuth(root_quat: np.ndarray, side: float = 25.) -> float:
+    """One azimuth for a whole clip that looks along the root's mean horizontal rotation axis, so a flip, cartwheel or
+    roll turns in the image plane: summed horizontal rotation vectors between frames, viewed from the side the upright
+    body faces more, swung `side` degrees for depth. Clips that hardly turn about a horizontal axis get a 3/4 front
+    view of the mean upright heading instead."""
+    q = np.asarray(root_quat, np.float64)
+    q = q / np.linalg.norm(q, axis=1, keepdims=True)
+    w0, v0, w1, v1 = q[:-1, :1], q[:-1, 1:], q[1:, :1], q[1:, 1:]
+    rel_w = w1 * w0 + np.sum(v1 * v0, axis=1, keepdims=True)              # q1 * conj(q0): world-frame increment
+    rel_v = w0 * v1 - w1 * v0 - np.cross(v1, v0)
+    rel_v *= np.sign(rel_w + (rel_w == 0))                                # shortest way round
+    norm = np.linalg.norm(rel_v, axis=1, keepdims=True)
+    rotvec = 2 * np.arctan2(norm, np.abs(rel_w)) * rel_v / np.maximum(norm, 1e-12)
+    turn = rotvec[:, :2].sum(axis=0)
+    w, x, y, z = q.T
+    upright = 1 - 2 * (x * x + y * y) > 0.7                               # root z axis within ~45 deg of vertical
+    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    facing = np.stack([np.cos(yaw), np.sin(yaw)], axis=1)[upright if upright.any() else slice(None)].mean(axis=0)
+    if np.linalg.norm(turn) < np.pi:                                      # less than half a turn in all
+        forward = -facing
+    else:
+        forward = turn / np.linalg.norm(turn)
+        forward = forward if forward @ facing <= 0 else -forward          # stand on the side the body faces
+    return float(np.degrees(np.arctan2(forward[1], forward[0])) + side)
+
+
 def video_view(camera: dict, times: np.ndarray, pelvis: np.ndarray, fps: float) -> View:
     """View from the camera that filmed a video clip (humanoid_motion.video.camera): its orientation and lens, at a
     position that puts the pelvis (T, 3), at times (T,) s, where the person's pelvis is in the video (scaled to the
@@ -239,10 +267,13 @@ def make_view(camera: str, points: np.ndarray, root_quat: np.ndarray, fps: float
               orbit: float = 0.) -> View:
     """fixed: world-fixed 3/4 view, 45 degree lens, slightly from above. cinematic: turns with the body, long lens,
     framed on the body's size, near eye level, with lead room in the direction of travel; orbit adds a swing of
-    +-orbit degrees (one sine period over the clip)."""
+    +-orbit degrees (one sine period over the clip). axis: as cinematic, but one azimuth for the clip, along its
+    rotation axis (axis_azimuth), for flips and cartwheels, where the heading is undefined upside down."""
     look = follow(points, fps, mode=follow_mode)
     if camera == 'fixed':
         return View(look, 140., 2.6, -10.)
+    if camera == 'axis':
+        return View(look, axis_azimuth(root_quat), framed_distance(points), CINE_ELEVATION)
     velocity = smooth(np.gradient(look[:, :2], axis=0) * fps, fps, 1.0)
     lead = 0.3 * velocity                                                 # aim 0.3 s ahead, at most 0.35 m
     look[:, :2] += lead * np.minimum(1., 0.35 / np.maximum(np.linalg.norm(lead, axis=1, keepdims=True), 1e-9))
@@ -426,7 +457,8 @@ def render_pipeline(args) -> None:
         source = dict(np.load(ROOT / row['gmr'] / 'reference.npz'))
         hpos, parents = source['source_positions'], source['source_parents'].astype(int)
         hfps = float(1 / np.diff(source['timestamps']).mean())
-        head = list(source['source_names']).index('Head')
+        names = [str(n) for n in source['source_names']]
+        head = names.index('Head') if 'Head' in names else names.index('head')   # LAFAN1 BVH, SMPL-X
         hstage = Stage(args.width, args.height, lens(args.camera))
         hdata = mujoco.MjData(hstage.m)
         hdata.qpos[2], hdata.qpos[3] = -10.0, 1.0                         # park the robot model under the floor
@@ -572,8 +604,9 @@ def main() -> None:
     parser.add_argument('--labels', nargs='+', help='grid layout: one panel label per clip (default: motion category; "" for none)')
     parser.add_argument('--ghost', action='store_true', help='grid layout: also draw the reference as a translucent grey copy (analysis only; leave off for demos)')
     parser.add_argument('--cols', type=int, default=3, help='grid layout: panels per row')
-    parser.add_argument('--camera', choices=['cinematic', 'fixed', 'video'], default='cinematic',
-                        help='cinematic: turns with the body, long lens, framed on its size; fixed: one world view; '
+    parser.add_argument('--camera', choices=['cinematic', 'axis', 'fixed', 'video'], default='cinematic',
+                        help='cinematic: turns with the body, long lens, framed on its size; axis: as cinematic with one '
+                             'azimuth per clip, along its rotation axis (flips, cartwheels); fixed: one world view; '
                              'video (video layout): the camera that filmed the clip, from --source-camera')
     parser.add_argument('--source-camera', nargs='+', metavar='CLIP=FILE',
                         help='video layout, --camera video: camera.json of each clip (python -m humanoid_motion.video.camera)')
