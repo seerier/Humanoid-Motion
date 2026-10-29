@@ -10,6 +10,8 @@ offscreen renderer; nothing is re-simulated.
     python scripts/render_video.py pipeline --library ... --evaluation ... --clips dance2_subject4_f2820_3000
     # flips and cartwheels: one azimuth per clip, looking along its rotation axis (the heading is undefined upside down)
     python scripts/render_video.py pipeline ... --camera axis --clips cmu_90_08_side_flip
+    # two columns, human source joints | recorded physical execution
+    python scripts/render_video.py pipeline ... --no-reference
     # analysis only, not for demos: the reference as a translucent grey copy over the execution
     python scripts/render_video.py grid ... --clips jumps1_subject1_f2820_3000 --ghost
     # one row per clip, one column per policy evaluated on the same library (e.g. two tracking backends)
@@ -495,7 +497,7 @@ def render_pipeline(args) -> None:
             img = rstage.shoot(rdata, rview, r)
             return caption(img, PIPELINE_LABELS[1]) if top else img
         run.label = PIPELINE_LABELS[2] if top else None
-        rows.append([human, kinematic, run.frame])
+        rows.append([human, run.frame] if args.no_reference else [human, kinematic, run.frame])
     frames = [grid([[f(i / FPS) for f in row] for row in rows]) for i in range(int(args.seconds * FPS))]
     write(frames, args.out, args.still, args.gif, args.webp)
 
@@ -599,7 +601,7 @@ def main() -> None:
     parser.add_argument('--source-fps', type=float, default=30., help='video layout: frame rate of the source videos')
     parser.add_argument('--source-label', default='Source video', help='video layout: label of the source video column')
     parser.add_argument('--source-width', type=int, help='video layout: width of the source video panel (default --width)')
-    parser.add_argument('--no-reference', action='store_true', help='video layout: leave out the retargeted reference column')
+    parser.add_argument('--no-reference', action='store_true', help='video, pipeline layouts: leave out the retargeted reference column')
     parser.add_argument('--clips', nargs='+', required=True)
     parser.add_argument('--labels', nargs='+', help='grid layout: one panel label per clip (default: motion category; "" for none)')
     parser.add_argument('--ghost', action='store_true', help='grid layout: also draw the reference as a translucent grey copy (analysis only; leave off for demos)')
