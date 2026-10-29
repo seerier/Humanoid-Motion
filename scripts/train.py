@@ -4,7 +4,8 @@
 Observation v2 (future reference window + proprioceptive history), failure-adaptive clip and phase sampling,
 BeyondMimic rewards and failure terminations unchanged; the clip end is a bootstrapped time-out.
 Resumes from <output>/latest.pt. --train-hours is cumulative wall time across resumes; training also stops
-at --deadline or on SIGTERM/SIGUSR1, saving a checkpoint first.
+at --deadline or on SIGTERM/SIGUSR1, saving a checkpoint first. --init-from starts a new run (no latest.pt yet) from
+another run's policy, e.g. to continue on a larger library.
 """
 import argparse
 import json
@@ -40,6 +41,9 @@ def main():
                         help="Frame of the future orientation/displacement: 'reference' = v2, 'robot' = v2.1")
     parser.add_argument('--library', type=Path, default=LIBRARY, help='Imported Isaac library (import_library.py)')
     parser.add_argument('--usd-template', type=Path, help='Optional verified URDF->USD conversion to copy instead of converting')
+    parser.add_argument('--init-from', type=Path,
+                        help='New run only: start from this checkpoint\'s policy, observation normalizers and learning rate '
+                             '(its library may differ); optimizer, sampler, counters and budget start fresh')
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
@@ -147,6 +151,7 @@ def train(args, resources):
             self.train_seconds = 0.
             self.wall_seconds = 0.
             self.resume_count = 0
+            self.init_from = None
             self.last_save = time.monotonic()
             self.last_status = 0.
             self.last_keep = 0.
@@ -164,7 +169,7 @@ def train(args, resources):
                         rng=dict(python=random.getstate(), numpy=np.random.get_state(), torch=torch.get_rng_state(),
                                  cuda=torch.cuda.get_rng_state_all()),
                         resume_count=self.resume_count, observation=observation, rewards='BeyondMimic', seed=args.seed,
-                        learning_rate=float(self.alg.learning_rate))
+                        learning_rate=float(self.alg.learning_rate), init_from=self.init_from)
             payload = dict(model_state_dict=state, optimizer_state_dict=self.alg.optimizer.state_dict(),
                            obs_norm_state_dict=self.obs_normalizer.state_dict(),
                            privileged_obs_norm_state_dict=self.privileged_obs_normalizer.state_dict(),
@@ -259,12 +264,26 @@ def train(args, resources):
         runner.alg.learning_rate = float(infos.get('learning_rate', runner.alg.optimizer.param_groups[0]['lr']))
         print('RESUME learning_rate', runner.alg.learning_rate, flush=True)
         runner.resume_count = infos['resume_count'] + 1
+        runner.init_from = infos.get('init_from')
         command.restore_sampler(infos['sampler'])
         random.setstate(infos['rng']['python'])
         np.random.set_state(infos['rng']['numpy'])
         torch.set_rng_state(infos['rng']['torch'])
         torch.cuda.set_rng_state_all(infos['rng']['cuda'])
         wrapped.reset()
+    elif args.init_from:
+        start = torch.load(args.init_from, map_location=args.device, weights_only=False)
+        infos = start['infos']
+        if (infos['hidden'] != list(args.hidden) or infos.get('observation', 'v2') != observation
+                or (infos['actor_dim'], infos['critic_dim']) != (ACTOR_DIM, CRITIC_DIM)):
+            raise ValueError('Init checkpoint does not match this network or observation')
+        runner.alg.policy.load_state_dict(start['model_state_dict'])
+        runner.obs_normalizer.load_state_dict(start['obs_norm_state_dict'])
+        runner.privileged_obs_normalizer.load_state_dict(start['privileged_obs_norm_state_dict'])
+        runner.alg.learning_rate = float(infos.get('learning_rate', start['optimizer_state_dict']['param_groups'][0]['lr']))
+        runner.init_from = dict(path=str(args.init_from.resolve()), sha256=sha256(args.init_from), updates=infos['updates'],
+                                library_sha256=infos['library_sha256'])
+        print('INIT', json.dumps(runner.init_from), 'learning_rate', runner.alg.learning_rate, flush=True)
     runner.current_learning_iteration = runner.updates
     runner.last_tick = time.monotonic()
     atomic_json(args.output / f'provenance-{runner.resume_count}.json', dict(library_sha256=library_hash,
@@ -272,7 +291,7 @@ def train(args, resources):
                 code_sha256={str(p.relative_to(ROOT)): sha256(p) for p in [Path(__file__), ROOT / 'src/humanoid_motion/tracking/observations.py',
                              ROOT / 'src/humanoid_motion/tracking/command.py', ROOT / 'src/humanoid_motion/library.py']},
                 tracker_commit=TRACKING_COMMIT, seed=args.seed, num_envs=args.num_envs, hidden=list(args.hidden),
-                resume_count=runner.resume_count, smoke=smoke, agent=agent.to_dict()))
+                resume_count=runner.resume_count, init_from=runner.init_from, smoke=smoke, agent=agent.to_dict()))
     mirror = None if smoke else wandb_run.start(args.output, 'train', dict(num_envs=args.num_envs, hidden=list(args.hidden),
                                                 seed=args.seed, library_sha256=library_hash, observation=observation, rewards='BeyondMimic',
                                                 clip_end='time_out', job=os.environ.get('SLURM_JOB_ID'), resume_count=runner.resume_count,
